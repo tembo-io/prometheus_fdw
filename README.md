@@ -27,10 +27,10 @@ Connect to clerk using your credentials:
 ```
 
 create server my_clerk_server
-foreign data wrapper clerk_wrapper
-options (
-api_key '<clerk secret Key>' -- Clerk API key, required
-);
+  foreign data wrapper clerk_wrapper
+  options (
+    api_key '<clerk secret Key>' -- Clerk API key, required
+  );
 
 ```
 
@@ -38,14 +38,15 @@ Create Foreign Table:
 ```
 
 create foreign table clerk (
-id bigint,
-name text,
-email text
-)
-server my_clerk_server
+  id bigint,
+  name text,
+  email text
+  )
+  server my_clerk_server
 
 ```
 
+This wrapper currently only supports displaying the name and email.
 Note: We will soon support being able to request more fields like orgranizations, roles etc.
 
 Query from the Foreign Table:
