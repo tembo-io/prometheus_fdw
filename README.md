@@ -17,9 +17,11 @@ Create the wrapper extension
 
 Create the foreign data wrapper:
 
-````create foreign data wrapper clerk_wrapper
+````
+create foreign data wrapper clerk_wrapper
   handler clerk_fdw_handler
-  validator clerk_fdw_validator;```
+  validator clerk_fdw_validator;
+```
 
 Connect to clerk using your credentials:
 ````
@@ -48,10 +50,4 @@ Note: We will soon support being able to request more fields like orgranizations
 
 Query from the Foreign Table:
 `select * from clerk`
-
-
-
-
-
-
 ```
