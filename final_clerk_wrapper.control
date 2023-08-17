@@ -1,0 +1,5 @@
+comment = 'final_clerk_wrapper:  Created by pgrx'
+default_version = '@CARGO_VERSION@'
+module_pathname = '$libdir/final_clerk_wrapper'
+relocatable = false
+superuser = true
