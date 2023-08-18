@@ -24,6 +24,7 @@ create foreign data wrapper clerk_wrapper
 ```
 
 Connect to clerk using your credentials:
+
 ```
 
 create server my_clerk_server
@@ -35,12 +36,22 @@ create server my_clerk_server
 ```
 
 Create Foreign Table:
+
 ```
 
 create foreign table clerk (
   id bigint,
-  name text,
-  email text
+  first_name text,
+  email text,
+  last_name text,
+  gender text,
+  created_at bigint,
+  last_sign_in_at bigint,
+  phone_numbers bigint
+  username text,
+  updated_at bigint,
+  organization text,
+  role text
   )
   server my_clerk_server
 
@@ -51,3 +62,33 @@ Note: We will soon support being able to request more fields like orgranizations
 
 Query from the Foreign Table:
 `select * from clerk`
+
+# SQL queries for most common tasks
+
+To display all organizations
+`SELECT DISTINCT unnest(string_to_array(organization, ',')) AS unique_organization FROM clerk;`
+
+To list all Users
+`SELECT id, first_name, last_name, email FROM clerk;`
+
+To list all Users of an Organization with Role
+
+```
+WITH org_roles AS (
+  SELECT
+    id,
+    first_name,
+    last_name,
+    UNNEST(STRING_TO_ARRAY(organization, ',')) AS org,
+    UNNEST(STRING_TO_ARRAY(role, ',')) AS org_role
+  FROM clerk
+)
+SELECT
+  id,
+  first_name,
+  last_name,
+  org_role AS specific_role
+FROM org_roles
+WHERE org = 'OrgName';
+
+```
