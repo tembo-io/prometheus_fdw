@@ -40,7 +40,7 @@ Create Foreign Table:
 ```
 
 create foreign table clerk (
-  id bigint,
+  id string,
   first_name text,
   email text,
   last_name text,
@@ -53,7 +53,7 @@ create foreign table clerk (
   organization text,
   role text
   )
-  server my_clerk_server
+  server my_clerk_server;
 
 ```
 
