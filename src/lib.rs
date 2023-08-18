@@ -8,10 +8,9 @@ use std::env;
 use supabase_wrappers::{prelude::*, utils::get_vault_secret};
 use tokio::runtime::Runtime;
 
-// also display the role and organization
-
 pgrx::pg_module_magic!();
 
+// Foreign Data Wrapper (FDW) attributes
 #[wrappers_fdw(
     version = "0.1.0",
     author = "Jay Kothari",
@@ -21,9 +20,10 @@ pgrx::pg_module_magic!();
 pub struct ClerkFdw {
     row_cnt: i64,
     tgt_cols: Vec<Column>,
-    users: Vec<UserInfo>,
+    users: Vec<UserInfo>, // User Information
 }
 
+// Struct to hold user information
 struct UserInfo {
     id: String,
     first_name: Option<String>,
@@ -40,6 +40,7 @@ struct UserInfo {
                                 // organizations_count: i64,
 }
 
+// Function to convert role enum to string
 fn role_to_string(role: &Role) -> String {
     match role {
         Role::Admin => "Admin".to_string(),
@@ -47,15 +48,18 @@ fn role_to_string(role: &Role) -> String {
     }
 }
 
+// Function to fetch users from the Clerk API
 fn fetch_users(api_key: &str) -> Vec<UserInfo> {
     let rt = Runtime::new().unwrap();
     let mut user_info_list: Vec<UserInfo> = Vec::new();
 
     rt.block_on(async {
+        // Initialize the Clerk client
         let clerk_dev_api_token = api_key;
         let config =
             ClerkConfiguration::new(None, None, Some(clerk_dev_api_token.to_string()), None);
         let client = Clerk::new(config);
+        // Fetch the list of users and deserialize the response
         let res = client.get(ClerkGetEndpoint::GetUserList).await.unwrap();
         let json_data: Vec<Person> = serde_json::from_value(res)
             .map_err(|err| {
@@ -64,7 +68,9 @@ fn fetch_users(api_key: &str) -> Vec<UserInfo> {
             })
             .unwrap();
 
+        // Iterate through the users and fetch their organization memberships
         for user in json_data {
+            // Fetch the organization memberships of the user
             let org_data =
                 User::users_get_organization_memberships(&client, &user.id, Some(0.0), Some(0.0))
                     .await
@@ -74,7 +80,6 @@ fn fetch_users(api_key: &str) -> Vec<UserInfo> {
             for membership in org_data.data {
                 if let Some(organization) = membership.organization {
                     organization_names.push(organization.name);
-
                     // get data about the roles of the user in the organization
                     let org_membership_list = OragnizationMebership::list_organization_memberships(
                         &client,
@@ -92,6 +97,7 @@ fn fetch_users(api_key: &str) -> Vec<UserInfo> {
                             if let Some(org_user_id) = public_user_data.user_id {
                                 if org_user_id == user.id {
                                     if let Some(role) = org_mem.role {
+                                        // Push the respective role to the organization_roles vector
                                         organization_roles.push(role_to_string(&role));
                                     }
                                 }
@@ -101,6 +107,7 @@ fn fetch_users(api_key: &str) -> Vec<UserInfo> {
                 }
             }
 
+            // Create a UserInfo struct and push it to the user_info_list
             let user_info = UserInfo {
                 id: user.id,
                 first_name: user.first_name,
@@ -118,7 +125,6 @@ fn fetch_users(api_key: &str) -> Vec<UserInfo> {
                 username: user.username,
                 organization_names: organization_names.join(","),
                 organization_roles: organization_roles.join(","),
-                // organizations_count: org_data.total_count as i64,
             };
             user_info_list.push(user_info);
         }
@@ -127,8 +133,10 @@ fn fetch_users(api_key: &str) -> Vec<UserInfo> {
 }
 
 impl ForeignDataWrapper for ClerkFdw {
+    // Constructor for the FDW
     fn new(options: &HashMap<String, String>) -> Self {
         let users = match options.get("api_key") {
+            // Fetch users based on the provided API key or API key ID
             Some(api_key) => Some(fetch_users(api_key)),
             None => require_option("api_key_id", options)
                 .and_then(|key_id| get_vault_secret(&key_id))
@@ -142,6 +150,7 @@ impl ForeignDataWrapper for ClerkFdw {
         }
     }
 
+    // Begin the scan operation
     fn begin_scan(
         &mut self,
         _quals: &[Qual],
@@ -154,6 +163,9 @@ impl ForeignDataWrapper for ClerkFdw {
         self.tgt_cols = columns.to_vec();
     }
 
+    // Iterate through the scan results, populating rows with user data
+    // TODO: Convert type of created_at, updated_at, last_sign_in_at to timestamp
+    // TODO: Convert type of phone_numbers, emails, organizations and roles to array
     fn iter_scan(&mut self, row: &mut Row) -> Option<()> {
         if let Some(user) = self.users.get(self.row_cnt as usize) {
             for tgt_col in &self.tgt_cols {
@@ -183,10 +195,6 @@ impl ForeignDataWrapper for ClerkFdw {
                         Some(Cell::String(user.organization_names.clone())),
                     ),
                     "role" => row.push("role", Some(Cell::String(user.organization_roles.clone()))),
-                    // "organizations_count" => row.push(
-                    //     "organizations_count",
-                    //     Some(Cell::I64(user.organizations_count)),
-                    // ),
                     _ => {}
                 }
             }
@@ -215,7 +223,7 @@ struct Person {
     first_name: Option<String>,
     gender: Option<String>,
     has_image: bool,
-    id: String, // figure out why it all is same
+    id: String,
     image_url: String,
     last_name: Option<String>,
     last_sign_in_at: Option<u64>,
