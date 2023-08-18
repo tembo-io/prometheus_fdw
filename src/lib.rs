@@ -11,14 +11,15 @@ pgrx::pg_module_magic!();
 
 #[wrappers_fdw(
     version = "0.1.0",
-    author = "Your Name",
-    website = "https://yourwebsite.com"
+    author = "Jay Kothari",
+    website = "https://tembo.io"
 )]
 
 pub struct ClerkFdw {
     row_cnt: i64,
     tgt_cols: Vec<Column>,
     users: Vec<User>,
+    // organization: Option<String>,
 }
 
 fn fetch_users(api_key: &str) -> Vec<User> {
@@ -42,10 +43,12 @@ impl ForeignDataWrapper for ClerkFdw {
                 .map(|api_key| fetch_users(&api_key)),
         }
         .unwrap();
+        // let organization = Some("tembo".to_string());
         Self {
             row_cnt: 0,
             tgt_cols: Vec::new(),
             users,
+            // organization,
         }
     }
 
@@ -66,14 +69,10 @@ impl ForeignDataWrapper for ClerkFdw {
             for tgt_col in &self.tgt_cols {
                 match tgt_col.name.as_str() {
                     "id" => row.push("id", Some(Cell::String(user.id.clone()))),
-                    "name" => row.push(
-                        "name",
-                        Some(Cell::String(format!(
-                            "{} {}",
-                            user.first_name.clone().unwrap_or_default(),
-                            user.last_name.clone().unwrap_or_default()
-                        ))),
-                    ),
+                    "first_name" => {
+                        row.push("first_name", user.first_name.clone().map(Cell::String))
+                    }
+                    "last_name" => row.push("last_name", user.last_name.clone().map(Cell::String)),
                     "email" => row.push(
                         "email",
                         Some(Cell::String(
@@ -83,6 +82,23 @@ impl ForeignDataWrapper for ClerkFdw {
                                 .unwrap_or_default(),
                         )),
                     ),
+                    "gender" => row.push("gender", user.gender.clone().map(Cell::String)),
+                    "created_at" => row.push("created_at", Some(Cell::I64(user.created_at as i64))),
+                    "updated_at" => row.push("updated_at", Some(Cell::I64(user.updated_at as i64))),
+                    "last_sign_in_at" => row.push(
+                        "last_sign_in_at",
+                        user.last_sign_in_at.map(|ts| Cell::I64(ts as i64)),
+                    ),
+                    "phone_numbers" => row.push(
+                        "phone_numbers",
+                        user.phone_numbers
+                            .first()
+                            .map(|phone| Cell::String(phone.clone())),
+                    ),
+                    "username" => row.push("username", user.username.clone().map(Cell::String)),
+                    // "organization" => {
+                    //     row.push("organization", self.organization.clone().map(Cell::String))
+                    // }
                     _ => {}
                 }
             }
@@ -103,21 +119,21 @@ struct User {
     banned: bool,
     birthday: Option<String>,
     create_organization_enabled: bool,
-    created_at: u64, // use this
+    created_at: u64,
     delete_self_enabled: bool,
     email_addresses: Vec<EmailAddress>,
     external_accounts: Vec<ExternalAccount>,
     external_id: Option<String>,
-    first_name: Option<String>, // split out first sanme and last name
-    gender: Option<String>,     // use this
+    first_name: Option<String>,
+    gender: Option<String>,
     has_image: bool,
     id: String, // figure out why it all is same
     image_url: String,
     last_name: Option<String>,
-    last_sign_in_at: Option<u64>, // use this
+    last_sign_in_at: Option<u64>,
     object: String,
     password_enabled: bool,
-    phone_numbers: Vec<String>, // use this
+    phone_numbers: Vec<String>,
     primary_email_address_id: Option<String>,
     primary_phone_number_id: Option<String>,
     primary_web3_wallet_id: Option<String>,
@@ -128,8 +144,8 @@ struct User {
     totp_enabled: bool,
     two_factor_enabled: bool,
     unsafe_metadata: UnsafeMetadata,
-    updated_at: u64,          // use this
-    username: Option<String>, // use this
+    updated_at: u64,
+    username: Option<String>,
     web3_wallets: Vec<String>,
 }
 
