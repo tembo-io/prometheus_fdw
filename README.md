@@ -31,7 +31,6 @@ create server my_clerk_server
   foreign data wrapper clerk_wrapper
   options (
     api_key '<clerk secret Key>')
-
 ```
 
 Create Foreign Table:
