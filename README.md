@@ -45,7 +45,7 @@ create foreign table clerk (
   gender text,
   created_at bigint,
   last_sign_in_at bigint,
-  phone_numbers bigint
+  phone_numbers bigint,
   username text,
   updated_at bigint,
   organization text,
