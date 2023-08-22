@@ -34,7 +34,9 @@ jobs:
           # Update cache directories as needed
           cache-directories: |
             /home/runner/.pgrx
-      # Add additional actions if needed for your extension
+      - uses: ./.github/actions/pgx-init
+        with:
+          working-directory: ./
       - name: Cargo format
         run: cargo +nightly fmt --all --check
       - name: Clippy
