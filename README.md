@@ -38,7 +38,7 @@ Create Foreign Table:
 ```
 
 create foreign table clerk (
-  id string,
+  id text,
   first_name text,
   email text,
   last_name text,
