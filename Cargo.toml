@@ -1,5 +1,5 @@
 [package]
-name = "final_clerk_wrapper"
+name = "clerk_fdw"
 version = "0.0.0"
 edition = "2021"
 
