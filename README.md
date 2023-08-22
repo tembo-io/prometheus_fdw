@@ -30,8 +30,7 @@ Connect to clerk using your credentials:
 create server my_clerk_server
   foreign data wrapper clerk_wrapper
   options (
-    api_key '<clerk secret Key>' -- Clerk API key, required
-  )
+    api_key '<clerk secret Key>')
 
 ```
 
