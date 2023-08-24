@@ -3,6 +3,7 @@ use clerk_rs::{
     endpoints::ClerkGetEndpoint, models::organization_membership::Role, ClerkConfiguration,
 };
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::collections::HashMap;
 use std::env;
 use supabase_wrappers::{prelude::*, utils::get_vault_secret};
@@ -48,6 +49,30 @@ fn role_to_string(role: &Role) -> String {
     }
 }
 
+async fn get_users_reqwest(url: &str, api_key: &str) -> Result<Vec<Person>, reqwest::Error> {
+    // Set up the request client
+    let client = reqwest::Client::new();
+
+    // Making the GET request
+    let res = client
+        .get(url)
+        .header("Authorization", format!("Bearer {}", api_key.to_string()))
+        .send()
+        .await?;
+
+    let users_json: Value = res.json().await?;
+
+    // Convert response to a JSON object (assuming the response is a JSON)
+    let users: Vec<Person> = serde_json::from_value(users_json)
+        .map_err(|err| {
+            eprintln!("{err}");
+            err
+        })
+        .unwrap();
+
+    Ok(users)
+}
+
 // Function to fetch users from the Clerk API
 fn fetch_users(api_key: &str) -> Vec<UserInfo> {
     let rt = Runtime::new().unwrap();
@@ -60,13 +85,19 @@ fn fetch_users(api_key: &str) -> Vec<UserInfo> {
             ClerkConfiguration::new(None, None, Some(clerk_dev_api_token.to_string()), None);
         let client = Clerk::new(config);
         // Fetch the list of users and deserialize the response
-        let res = client.get(ClerkGetEndpoint::GetUserList).await.unwrap();
-        let json_data: Vec<Person> = serde_json::from_value(res)
-            .map_err(|err| {
-                eprintln!("{err}");
-                err
-            })
-            .unwrap();
+        // let res = client.get(ClerkGetEndpoint::GetUserList).await.unwrap();
+        // let json_data: Vec<Person> = serde_json::from_value(res)
+        //     .map_err(|err| {
+        //         eprintln!("{err}");
+        //         err
+        //     })
+        //     .unwrap();
+        let json_data = get_users_reqwest(
+            "https://api.clerk.com/v1/users?limit=500",
+            &clerk_dev_api_token,
+        )
+        .await
+        .unwrap();
 
         // Iterate through the users and fetch their organization memberships
         for user in json_data {
@@ -274,13 +305,13 @@ struct Verification {
 struct ExternalAccount {
     approved_scopes: String,
     email_address: String,
-    family_name: String,
-    given_name: String,
-    google_id: String,
+    family_name: Option<String>,
+    given_name: Option<String>,
+    google_id: Option<String>,
     id: String,
     label: Option<String>,
     object: String,
-    picture: String,
+    picture: Option<String>,
     public_metadata: HashMap<String, String>,
     username: Option<String>,
     verification: Verification,
