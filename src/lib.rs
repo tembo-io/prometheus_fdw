@@ -1,6 +1,6 @@
 use clerk_rs::{
     apis::organization_memberships_api::OragnizationMebership, apis::users_api::User, clerk::Clerk,
-    endpoints::ClerkGetEndpoint, models::organization_membership::Role, ClerkConfiguration,
+    models::organization_membership::Role, ClerkConfiguration,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -54,15 +54,24 @@ async fn get_users_reqwest(url: &str, api_key: &str) -> Result<Vec<Person>, reqw
     let client = reqwest::Client::new();
 
     // Making the GET request
-    let res = client
+    let res_result = client
         .get(url)
         .header("Authorization", format!("Bearer {}", api_key.to_string()))
         .send()
-        .await?;
+        .await;
+
+    let res = match res_result {
+        Ok(file) => file,
+        Err(error) => {
+            eprintln!("Error: {:#?}", error);
+            return Err(error);
+        }
+    };
 
     let users_json: Value = res.json().await?;
 
     // Convert response to a JSON object (assuming the response is a JSON)
+    // not able to handle this unwrap because of return type
     let users: Vec<Person> = serde_json::from_value(users_json)
         .map_err(|err| {
             eprintln!("{err}");
@@ -74,6 +83,7 @@ async fn get_users_reqwest(url: &str, api_key: &str) -> Result<Vec<Person>, reqw
 }
 
 // Function to fetch users from the Clerk API
+// Need to properly handle the errors instead of empty return statements
 fn fetch_users(api_key: &str) -> Vec<UserInfo> {
     let rt = Runtime::new().unwrap();
     let mut user_info_list: Vec<UserInfo> = Vec::new();
@@ -84,42 +94,57 @@ fn fetch_users(api_key: &str) -> Vec<UserInfo> {
         let config =
             ClerkConfiguration::new(None, None, Some(clerk_dev_api_token.to_string()), None);
         let client = Clerk::new(config);
-        // Fetch the list of users and deserialize the response
-        // let res = client.get(ClerkGetEndpoint::GetUserList).await.unwrap();
-        // let json_data: Vec<Person> = serde_json::from_value(res)
-        //     .map_err(|err| {
-        //         eprintln!("{err}");
-        //         err
-        //     })
-        //     .unwrap();
-        let json_data = get_users_reqwest(
+
+        let json_data_result = get_users_reqwest(
             "https://api.clerk.com/v1/users?limit=500",
             &clerk_dev_api_token,
         )
-        .await
-        .unwrap();
+        .await;
+
+        let json_data = match json_data_result {
+            Ok(data) => data,
+            Err(error) => {
+                eprintln!("Error: {:#?}", error);
+                return;
+            }
+        };
 
         // Iterate through the users and fetch their organization memberships
         for user in json_data {
             // Fetch the organization memberships of the user
-            let org_data =
+            let org_data_result =
                 User::users_get_organization_memberships(&client, &user.id, Some(0.0), Some(0.0))
-                    .await
-                    .unwrap();
+                    .await;
+
+            let org_data = match org_data_result {
+                Ok(data) => data,
+                Err(error) => {
+                    eprintln!("Error: {:#?}", error);
+                    return;
+                }
+            };
             let mut organization_names = Vec::new();
             let mut organization_roles = Vec::new();
             for membership in org_data.data {
                 if let Some(organization) = membership.organization {
                     organization_names.push(organization.name);
                     // get data about the roles of the user in the organization
-                    let org_membership_list = OragnizationMebership::list_organization_memberships(
-                        &client,
-                        &organization.id,
-                        Some(0.0),
-                        Some(0.0),
-                    )
-                    .await
-                    .unwrap();
+                    let org_membership_list_result =
+                        OragnizationMebership::list_organization_memberships(
+                            &client,
+                            &organization.id,
+                            Some(0.0),
+                            Some(0.0),
+                        )
+                        .await;
+
+                    let org_membership_list = match org_membership_list_result {
+                        Ok(data) => data,
+                        Err(error) => {
+                            eprintln!("Error: {:#?}", error);
+                            return;
+                        }
+                    };
 
                     // Iterate through the organization memberships to obtain the role
                     for org_mem in org_membership_list.data {
@@ -166,14 +191,25 @@ fn fetch_users(api_key: &str) -> Vec<UserInfo> {
 impl ForeignDataWrapper for ClerkFdw {
     // Constructor for the FDW
     fn new(options: &HashMap<String, String>) -> Self {
-        let users = match options.get("api_key") {
+        let users_result = match options.get("api_key") {
             // Fetch users based on the provided API key or API key ID
             Some(api_key) => Some(fetch_users(api_key)),
             None => require_option("api_key_id", options)
                 .and_then(|key_id| get_vault_secret(&key_id))
                 .map(|api_key| fetch_users(&api_key)),
-        }
-        .unwrap();
+        };
+
+        let users = match users_result {
+            Some(users) => users,
+            _ => {
+                return Self {
+                    row_cnt: 0,
+                    tgt_cols: Vec::new(),
+                    users: Vec::new(),
+                };
+            }
+        };
+
         Self {
             row_cnt: 0,
             tgt_cols: Vec::new(),
