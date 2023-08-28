@@ -191,12 +191,8 @@ impl ForeignDataWrapper for ClerkFdw {
 
         let api_key = options.get("api_key").cloned();
 
-        let clerk_client = match options.get("api_key") {
-            Some(api_key) => Some(create_clerk_client(api_key)),
-            None => require_option("api_key_id", options)
-                .and_then(|key_id| get_vault_secret(&key_id))
-                .map(|api_key| create_clerk_client(&api_key)),
-        };
+        let clerk_client = None;
+
         Self {
             row_cnt: 0,
             tgt_cols: Vec::new(),
@@ -216,6 +212,8 @@ impl ForeignDataWrapper for ClerkFdw {
         _options: &HashMap<String, String>,
     ) {
         if let Some(ref api_key) = self.api_key {
+            let clerk_client = create_clerk_client(api_key);
+            self.clerk_client = Some(clerk_client);
             self.users = fetch_users(&self.clerk_client, api_key);
         } else {
             // Handle the case where API key is not available
