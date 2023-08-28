@@ -13,40 +13,24 @@ pgrx::pg_module_magic!();
 
 // Foreign Data Wrapper (FDW) attributes
 #[wrappers_fdw(
-    version = "0.1.0",
+    version = "0.1.2",
     author = "Jay Kothari",
     website = "https://tembo.io"
 )]
 
+// TODO: users should be Option type
+// not sure if having API key in the self object is a good idea
 pub struct ClerkFdw {
     row_cnt: i64,
     tgt_cols: Vec<Column>,
+    clerk_client: Option<Clerk>,
+    api_key: Option<String>,
     users: Vec<UserInfo>, // User Information
 }
 
-// Struct to hold user information
-struct UserInfo {
-    id: String,
-    first_name: Option<String>,
-    last_name: Option<String>,
-    email_addresses: String, // ideally it would be a Vec<String>
-    gender: Option<String>,
-    created_at: i64,
-    updated_at: i64,
-    last_sign_in_at: Option<i64>,
-    phone_numbers: Vec<String>,
-    username: Option<String>,
-    organization_names: String, // ideally it would be a Vec<String>
-    organization_roles: String, // ideally it would be a Vec<String>
-                                // organizations_count: i64,
-}
-
-// Function to convert role enum to string
-fn role_to_string(role: &Role) -> String {
-    match role {
-        Role::Admin => "Admin".to_string(),
-        Role::BasicMember => "BasicMember".to_string(),
-    }
+fn create_clerk_client(api_key: &str) -> Clerk {
+    let config = ClerkConfiguration::new(None, None, Some(api_key.to_string()), None);
+    Clerk::new(config)
 }
 
 async fn get_users_reqwest(url: &str, api_key: &str) -> Result<Vec<Person>, reqwest::Error> {
@@ -84,16 +68,20 @@ async fn get_users_reqwest(url: &str, api_key: &str) -> Result<Vec<Person>, reqw
 
 // Function to fetch users from the Clerk API
 // Need to properly handle the errors instead of empty return statements
-fn fetch_users(api_key: &str) -> Vec<UserInfo> {
+fn fetch_users(clerk_client: &Option<Clerk>, api_key: &str) -> Vec<UserInfo> {
     let rt = Runtime::new().unwrap();
     let mut user_info_list: Vec<UserInfo> = Vec::new();
+    let clerk = match clerk_client {
+        Some(client) => client,
+        None => {
+            eprintln!("Error: No Clerk client provided");
+            return Vec::new();
+        }
+    };
 
     rt.block_on(async {
         // Initialize the Clerk client
         let clerk_dev_api_token = api_key;
-        let config =
-            ClerkConfiguration::new(None, None, Some(clerk_dev_api_token.to_string()), None);
-        let client = Clerk::new(config);
 
         let json_data_result = get_users_reqwest(
             "https://api.clerk.com/v1/users?limit=500",
@@ -113,7 +101,7 @@ fn fetch_users(api_key: &str) -> Vec<UserInfo> {
         for user in json_data {
             // Fetch the organization memberships of the user
             let org_data_result =
-                User::users_get_organization_memberships(&client, &user.id, Some(0.0), Some(0.0))
+                User::users_get_organization_memberships(&clerk, &user.id, Some(0.0), Some(0.0))
                     .await;
 
             let org_data = match org_data_result {
@@ -131,7 +119,7 @@ fn fetch_users(api_key: &str) -> Vec<UserInfo> {
                     // get data about the roles of the user in the organization
                     let org_membership_list_result =
                         OragnizationMebership::list_organization_memberships(
-                            &client,
+                            &clerk,
                             &organization.id,
                             Some(0.0),
                             Some(0.0),
@@ -188,31 +176,32 @@ fn fetch_users(api_key: &str) -> Vec<UserInfo> {
     return user_info_list;
 }
 
+// Function to convert role enum to string
+fn role_to_string(role: &Role) -> String {
+    match role {
+        Role::Admin => "Admin".to_string(),
+        Role::BasicMember => "BasicMember".to_string(),
+    }
+}
+
 impl ForeignDataWrapper for ClerkFdw {
     // Constructor for the FDW
     fn new(options: &HashMap<String, String>) -> Self {
-        let users_result = match options.get("api_key") {
-            // Fetch users based on the provided API key or API key ID
-            Some(api_key) => Some(fetch_users(api_key)),
+        let users = Vec::new();
+
+        let api_key = options.get("api_key").cloned();
+
+        let clerk_client = match options.get("api_key") {
+            Some(api_key) => Some(create_clerk_client(api_key)),
             None => require_option("api_key_id", options)
                 .and_then(|key_id| get_vault_secret(&key_id))
-                .map(|api_key| fetch_users(&api_key)),
+                .map(|api_key| create_clerk_client(&api_key)),
         };
-
-        let users = match users_result {
-            Some(users) => users,
-            _ => {
-                return Self {
-                    row_cnt: 0,
-                    tgt_cols: Vec::new(),
-                    users: Vec::new(),
-                };
-            }
-        };
-
         Self {
             row_cnt: 0,
             tgt_cols: Vec::new(),
+            clerk_client,
+            api_key,
             users,
         }
     }
@@ -226,6 +215,13 @@ impl ForeignDataWrapper for ClerkFdw {
         _limit: &Option<Limit>,
         _options: &HashMap<String, String>,
     ) {
+        if let Some(ref api_key) = self.api_key {
+            self.users = fetch_users(&self.clerk_client, api_key);
+        } else {
+            // Handle the case where API key is not available
+            eprintln!("Error: No API key available");
+        }
+
         self.row_cnt = 0;
         self.tgt_cols = columns.to_vec();
     }
@@ -274,6 +270,23 @@ impl ForeignDataWrapper for ClerkFdw {
     fn end_scan(&mut self) {
         // Clean up resources here, if needed
     }
+}
+
+// Struct to hold user information
+struct UserInfo {
+    id: String,
+    first_name: Option<String>,
+    last_name: Option<String>,
+    email_addresses: String, // ideally it would be a Vec<String>
+    gender: Option<String>,
+    created_at: i64,
+    updated_at: i64,
+    last_sign_in_at: Option<i64>,
+    phone_numbers: Vec<String>,
+    username: Option<String>,
+    organization_names: String, // ideally it would be a Vec<String>
+    organization_roles: String, // ideally it would be a Vec<String>
+                                // organizations_count: i64,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
