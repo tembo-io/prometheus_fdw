@@ -2,6 +2,7 @@ use clerk_rs::{
     apis::organization_memberships_api::OragnizationMebership, apis::users_api::User, clerk::Clerk,
     models::organization_membership::Role, ClerkConfiguration,
 };
+use pgrx::{error, info, warning, PgRelation, FATAL, PANIC};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -13,7 +14,7 @@ pgrx::pg_module_magic!();
 
 // Foreign Data Wrapper (FDW) attributes
 #[wrappers_fdw(
-    version = "0.1.2",
+    version = "0.1.4",
     author = "Jay Kothari",
     website = "https://tembo.io"
 )]
@@ -36,6 +37,7 @@ fn create_clerk_client(api_key: &str) -> Clerk {
 async fn get_users_reqwest(url: &str, api_key: &str) -> Result<Vec<Person>, reqwest::Error> {
     // Set up the request client
     let client = reqwest::Client::new();
+    info!("Request client created");
 
     // Making the GET request
     let res_result = client
@@ -43,11 +45,13 @@ async fn get_users_reqwest(url: &str, api_key: &str) -> Result<Vec<Person>, reqw
         .header("Authorization", format!("Bearer {}", api_key.to_string()))
         .send()
         .await;
+    info!("GET request sent");
 
     let res = match res_result {
         Ok(file) => file,
         Err(error) => {
             eprintln!("Error: {:#?}", error);
+            warning!("Error: {:#?}", error);
             return Err(error);
         }
     };
@@ -59,10 +63,12 @@ async fn get_users_reqwest(url: &str, api_key: &str) -> Result<Vec<Person>, reqw
     let users: Vec<Person> = serde_json::from_value(users_json)
         .map_err(|err| {
             eprintln!("{err}");
+            warning!("{err}");
             err
         })
         .unwrap();
 
+    info!("Users fetched");
     Ok(users)
 }
 
@@ -70,11 +76,13 @@ async fn get_users_reqwest(url: &str, api_key: &str) -> Result<Vec<Person>, reqw
 // Need to properly handle the errors instead of empty return statements
 fn fetch_users(clerk_client: &Option<Clerk>, api_key: &str) -> Vec<UserInfo> {
     let rt = Runtime::new().unwrap();
+    info!("Runtime created");
     let mut user_info_list: Vec<UserInfo> = Vec::new();
     let clerk = match clerk_client {
         Some(client) => client,
         None => {
             eprintln!("Error: No Clerk client provided");
+            warning!("Error: No Clerk client provided");
             return Vec::new();
         }
     };
@@ -93,9 +101,11 @@ fn fetch_users(clerk_client: &Option<Clerk>, api_key: &str) -> Vec<UserInfo> {
             Ok(data) => data,
             Err(error) => {
                 eprintln!("Error: {:#?}", error);
+                warning!("Error: {:#?}", error);
                 return;
             }
         };
+        info!("Users fetched -- fetch_users");
 
         // Iterate through the users and fetch their organization memberships
         for user in json_data {
@@ -108,9 +118,11 @@ fn fetch_users(clerk_client: &Option<Clerk>, api_key: &str) -> Vec<UserInfo> {
                 Ok(data) => data,
                 Err(error) => {
                     eprintln!("Error: {:#?}", error);
+                    warning!("Error: {:#?}", error);
                     return;
                 }
             };
+            info!("Organization memberships fetched");
             let mut organization_names = Vec::new();
             let mut organization_roles = Vec::new();
             for membership in org_data.data {
@@ -130,9 +142,11 @@ fn fetch_users(clerk_client: &Option<Clerk>, api_key: &str) -> Vec<UserInfo> {
                         Ok(data) => data,
                         Err(error) => {
                             eprintln!("Error: {:#?}", error);
+                            warning!("Error: {:#?}", error);
                             return;
                         }
                     };
+                    info!("Organization list fetched");
 
                     // Iterate through the organization memberships to obtain the role
                     for org_mem in org_membership_list.data {
@@ -170,6 +184,7 @@ fn fetch_users(clerk_client: &Option<Clerk>, api_key: &str) -> Vec<UserInfo> {
                 organization_names: organization_names.join(","),
                 organization_roles: organization_roles.join(","),
             };
+            info!("User info created {:#?}", user_info);
             user_info_list.push(user_info);
         }
     });
@@ -218,6 +233,7 @@ impl ForeignDataWrapper for ClerkFdw {
         } else {
             // Handle the case where API key is not available
             eprintln!("Error: No API key available");
+            warning!("Error: No API key available");
         }
 
         self.row_cnt = 0;
@@ -271,6 +287,7 @@ impl ForeignDataWrapper for ClerkFdw {
 }
 
 // Struct to hold user information
+#[derive(Debug)]
 struct UserInfo {
     id: String,
     first_name: Option<String>,
