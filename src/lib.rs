@@ -1,4 +1,4 @@
-use pgrx::{info, warning};
+use pgrx::warning;
 use pgrx::{pg_sys, prelude::*, JsonB};
 use reqwest::{self, Client};
 use serde::{Deserialize, Serialize};
@@ -17,15 +17,8 @@ fn body_to_rows(
     normal_cols: Vec<(&str, &str, &str)>,
     tgt_cols: &[Column],
 ) -> Vec<Row> {
-    info!("code in body_to_rows");
-    info!("obj_key: {}", obj_key);
-    info!("normal_cols: {:#?}", normal_cols);
-    info!("tgt_cols: {:#?}", tgt_cols);
-    info!("resp[0]: {:#?}", resp);
-
     let mut result = Vec::new();
 
-    info!("before match");
     let objs = if resp.is_array() {
         // If `resp` is directly an array
         resp.as_array().unwrap()
@@ -40,10 +33,8 @@ fn body_to_rows(
             None => return result,
         }
     };
-    info!("after match");
 
     for obj in objs {
-        info!("obj: {:#?}", obj);
         let mut row = Row::new();
 
         // extract normal columns
@@ -74,7 +65,6 @@ fn body_to_rows(
             }
         }
 
-        warning!("row: {:#?}", row);
         // put all properties into 'attrs' JSON column
         if tgt_cols.iter().any(|c| &c.name == "attrs") {
             let attrs = serde_json::from_str(&obj.to_string()).unwrap();
@@ -83,7 +73,6 @@ fn body_to_rows(
 
         result.push(row);
     }
-    info!("result: {:#?}", result);
     result
 }
 
