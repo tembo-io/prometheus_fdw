@@ -26,7 +26,6 @@ create foreign data wrapper clerk_wrapper
 Connect to clerk using your credentials:
 
 ```
-
 create server my_clerk_server
   foreign data wrapper clerk_wrapper
   options (
@@ -35,58 +34,46 @@ create server my_clerk_server
 
 Create Foreign Table:
 
-```
+## User table
 
-create foreign table clerk (
-  id text,
+```
+create foreign table clerk_users (
+  user_id text,
   first_name text,
-  email text,
   last_name text,
+  email text,
   gender text,
   created_at bigint,
+  updated_at bigint,
   last_sign_in_at bigint,
   phone_numbers bigint,
-  username text,
-  updated_at bigint,
-  organization text,
-  role text
+  username text
   )
-  server my_clerk_server;
+  server my_clerk_server
+  options (
+      object 'users'
+  );
 
 ```
 
-This wrapper currently only supports displaying the name and email.
-Note: We will soon support being able to request more fields like orgranizations, roles etc.
+## Organization Table
+
+```
+create foreign table clerk_orgs (
+  organization_id text,
+  name text,
+  slug text,
+  created_at bigint,
+  updated_at bigint,
+  created_by text
+)
+server my_clerk_server
+options (
+  object 'organizations'
+);
+```
 
 Query from the Foreign Table:
-`select * from clerk`
+`select * from clerk_users`
 
 # SQL queries for most common tasks
-
-To display all organizations
-`SELECT DISTINCT unnest(string_to_array(organization, ',')) AS unique_organization FROM clerk;`
-
-To list all Users
-`SELECT id, first_name, last_name, email FROM clerk;`
-
-To list all Users of an Organization with Role
-
-```
-WITH org_roles AS (
-  SELECT
-    id,
-    first_name,
-    last_name,
-    UNNEST(STRING_TO_ARRAY(organization, ',')) AS org,
-    UNNEST(STRING_TO_ARRAY(role, ',')) AS org_role
-  FROM clerk
-)
-SELECT
-  id,
-  first_name,
-  last_name,
-  org_role AS specific_role
-FROM org_roles
-WHERE org = 'OrgName';
-
-```
