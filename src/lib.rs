@@ -1,288 +1,305 @@
-use clerk_rs::{
-    apis::organization_memberships_api::OragnizationMebership, apis::users_api::User, clerk::Clerk,
-    models::organization_membership::Role, ClerkConfiguration,
-};
-use pgrx::{error, info, warning, PgRelation, FATAL, PANIC};
+use pgrx::{info, warning};
+use pgrx::{pg_sys, prelude::*, JsonB};
+use reqwest::{self, Client};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use std::collections::HashMap;
 use std::env;
-use supabase_wrappers::{prelude::*, utils::get_vault_secret};
 use tokio::runtime::Runtime;
-
+// use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
+use serde_json::Value as JsonValue;
+use std::str::FromStr;
+use supabase_wrappers::prelude::*;
 pgrx::pg_module_magic!();
 
-// Foreign Data Wrapper (FDW) attributes
+fn body_to_rows(
+    resp: &JsonValue,
+    obj_key: &str,
+    normal_cols: Vec<(&str, &str, &str)>,
+    tgt_cols: &[Column],
+) -> Vec<Row> {
+    info!("code in body_to_rows");
+    info!("obj_key: {}", obj_key);
+    info!("normal_cols: {:#?}", normal_cols);
+    info!("tgt_cols: {:#?}", tgt_cols);
+    info!("resp[0]: {:#?}", resp);
+
+    let mut result = Vec::new();
+
+    info!("before match");
+    let objs = if resp.is_array() {
+        // If `resp` is directly an array
+        resp.as_array().unwrap()
+    } else {
+        // If `resp` is an object containing the array under `obj_key`
+        match resp
+            .as_object()
+            .and_then(|v| v.get(obj_key))
+            .and_then(|v| v.as_array())
+        {
+            Some(objs) => objs,
+            None => return result,
+        }
+    };
+    info!("after match");
+
+    for obj in objs {
+        info!("obj: {:#?}", obj);
+        let mut row = Row::new();
+
+        // extract normal columns
+        for tgt_col in tgt_cols {
+            if let Some((src_name, col_name, col_type)) =
+                normal_cols.iter().find(|(_, c, _)| c == &tgt_col.name)
+            {
+                let cell = obj
+                    .as_object()
+                    .and_then(|v| v.get(*src_name))
+                    .and_then(|v| match *col_type {
+                        "bool" => v.as_bool().map(Cell::Bool),
+                        "i64" => v.as_i64().map(Cell::I64),
+                        "string" => v.as_str().map(|a| Cell::String(a.to_owned())),
+                        "timestamp" => v.as_str().map(|a| {
+                            let secs = a.parse::<i64>().unwrap() / 1000;
+                            let ts = to_timestamp(secs as f64);
+                            Cell::Timestamp(ts.to_utc())
+                        }),
+                        "timestamp_iso" => v.as_str().map(|a| {
+                            let ts = Timestamp::from_str(a).unwrap();
+                            Cell::Timestamp(ts)
+                        }),
+                        "json" => Some(Cell::Json(JsonB(v.clone()))),
+                        _ => None,
+                    });
+                row.push(col_name, cell);
+            }
+        }
+
+        warning!("row: {:#?}", row);
+        // put all properties into 'attrs' JSON column
+        if tgt_cols.iter().any(|c| &c.name == "attrs") {
+            let attrs = serde_json::from_str(&obj.to_string()).unwrap();
+            row.push("attrs", Some(Cell::Json(JsonB(attrs))));
+        }
+
+        result.push(row);
+    }
+    info!("result: {:#?}", result);
+    result
+}
+
+// convert response body text to rows
+fn resp_to_rows(obj: &str, resp: &JsonValue, tgt_cols: &[Column]) -> Vec<Row> {
+    let mut result = Vec::new();
+
+    match obj {
+        "users" => {
+            result = body_to_rows(
+                resp,
+                "data",
+                vec![
+                    ("id", "user_id", "string"),
+                    ("first_name", "first_name", "string"),
+                    ("last_name", "last_name", "string"),
+                    ("email", "email", "string"),
+                    ("gender", "gender", "string"),
+                    ("created_at", "created_at", "i64"),
+                    ("updated_at", "updated_at", "i64"),
+                    ("last_sign_in_at", "last_sign_in_at", "i64"),
+                    ("phone_numbers", "phone_numbers", "i64"),
+                    ("username", "username", "string"),
+                ],
+                tgt_cols,
+            );
+        }
+        "organizations" => {
+            result = body_to_rows(
+                resp,
+                "data",
+                vec![
+                    ("id", "organization_id", "string"),
+                    ("name", "name", "string"),
+                    ("slug", "slug", "string"),
+                    ("created_at", "created_at", "i64"),
+                    ("updated_at", "updated_at", "i64"),
+                    ("created_by", "created_by", "string"),
+                ],
+                tgt_cols,
+            );
+        }
+        "junction_table" => {
+            result = body_to_rows(
+                resp,
+                "junction_table",
+                vec![
+                    ("id", "id", "i64"),
+                    ("user_id", "user_id", "string"),
+                    ("organization_id", "organization_id", "string"),
+                    ("role", "role", "string"),
+                ],
+                tgt_cols,
+            );
+        }
+        _ => {
+            warning!("unsupported object: {}", obj);
+        }
+    }
+
+    result
+}
+
 #[wrappers_fdw(
-    version = "0.1.4",
+    version = "0.2.0",
     author = "Jay Kothari",
     website = "https://tembo.io"
 )]
 
-// TODO: users should be Option type
-// not sure if having API key in the self object is a good idea
-pub struct ClerkFdw {
-    row_cnt: i64,
+pub(crate) struct ClerkFdw {
+    rt: Runtime,
+    token: Option<String>,
+    client: Option<Client>,
+    scan_result: Option<Vec<Row>>,
     tgt_cols: Vec<Column>,
-    clerk_client: Option<Clerk>,
-    api_key: Option<String>,
-    users: Vec<UserInfo>, // User Information
 }
 
-fn create_clerk_client(api_key: &str) -> Clerk {
-    let config = ClerkConfiguration::new(None, None, Some(api_key.to_string()), None);
-    Clerk::new(config)
-}
+impl ClerkFdw {
+    const FDW_NAME: &str = "clerk_fdw";
 
-async fn get_users_reqwest(url: &str, api_key: &str) -> Result<Vec<Person>, reqwest::Error> {
-    // Set up the request client
-    let client = reqwest::Client::new();
-    info!("Request client created");
+    const DEFAULT_BASE_URL: &'static str = "https://api.clerk.com/v1/";
 
-    // Making the GET request
-    let res_result = client
-        .get(url)
-        .header("Authorization", format!("Bearer {}", api_key.to_string()))
-        .send()
-        .await;
-    info!("GET request sent");
+    // TODO: will have to incorportate offset at some point
+    const PAGE_SIZE: usize = 500;
 
-    let res = match res_result {
-        Ok(file) => file,
-        Err(error) => {
-            eprintln!("Error: {:#?}", error);
-            warning!("Error: {:#?}", error);
-            return Err(error);
-        }
-    };
+    // default maximum row count limit
+    const DEFAULT_ROWS_LIMIT: usize = 10_000;
 
-    let users_json: Value = res.json().await?;
-
-    // Convert response to a JSON object (assuming the response is a JSON)
-    // not able to handle this unwrap because of return type
-    let users: Vec<Person> = serde_json::from_value(users_json)
-        .map_err(|err| {
-            eprintln!("{err}");
-            warning!("{err}");
-            err
-        })
-        .unwrap();
-
-    info!("Users fetched");
-    Ok(users)
-}
-
-// Function to fetch users from the Clerk API
-// Need to properly handle the errors instead of empty return statements
-fn fetch_users(clerk_client: &Option<Clerk>, api_key: &str) -> Vec<UserInfo> {
-    let rt = Runtime::new().unwrap();
-    info!("Runtime created");
-    let mut user_info_list: Vec<UserInfo> = Vec::new();
-    let clerk = match clerk_client {
-        Some(client) => client,
-        None => {
-            eprintln!("Error: No Clerk client provided");
-            warning!("Error: No Clerk client provided");
-            return Vec::new();
-        }
-    };
-
-    rt.block_on(async {
-        // Initialize the Clerk client
-        let clerk_dev_api_token = api_key;
-
-        let json_data_result = get_users_reqwest(
-            "https://api.clerk.com/v1/users?limit=500",
-            &clerk_dev_api_token,
-        )
-        .await;
-
-        let json_data = match json_data_result {
-            Ok(data) => data,
-            Err(error) => {
-                eprintln!("Error: {:#?}", error);
-                warning!("Error: {:#?}", error);
-                return;
+    fn build_url(&self, obj: &str, options: &HashMap<String, String>) -> String {
+        match obj {
+            "users" => {
+                let base_url = Self::DEFAULT_BASE_URL.to_owned();
+                let ret = format!("{}users?limit={}", base_url, Self::PAGE_SIZE,);
+                ret
             }
-        };
-        info!("Users fetched -- fetch_users");
-
-        // Iterate through the users and fetch their organization memberships
-        for user in json_data {
-            // Fetch the organization memberships of the user
-            let org_data_result =
-                User::users_get_organization_memberships(&clerk, &user.id, Some(0.0), Some(0.0))
-                    .await;
-
-            let org_data = match org_data_result {
-                Ok(data) => data,
-                Err(error) => {
-                    eprintln!("Error: {:#?}", error);
-                    warning!("Error: {:#?}", error);
-                    return;
-                }
-            };
-            info!("Organization memberships fetched");
-            let mut organization_names = Vec::new();
-            let mut organization_roles = Vec::new();
-            for membership in org_data.data {
-                if let Some(organization) = membership.organization {
-                    organization_names.push(organization.name);
-                    // get data about the roles of the user in the organization
-                    let org_membership_list_result =
-                        OragnizationMebership::list_organization_memberships(
-                            &clerk,
-                            &organization.id,
-                            Some(0.0),
-                            Some(0.0),
-                        )
-                        .await;
-
-                    let org_membership_list = match org_membership_list_result {
-                        Ok(data) => data,
-                        Err(error) => {
-                            eprintln!("Error: {:#?}", error);
-                            warning!("Error: {:#?}", error);
-                            return;
-                        }
-                    };
-                    info!("Organization list fetched");
-
-                    // Iterate through the organization memberships to obtain the role
-                    for org_mem in org_membership_list.data {
-                        // Check if the user ID in org_mem matches the current user's ID
-                        if let Some(public_user_data) = org_mem.public_user_data {
-                            if let Some(org_user_id) = public_user_data.user_id {
-                                if org_user_id == user.id {
-                                    if let Some(role) = org_mem.role {
-                                        // Push the respective role to the organization_roles vector
-                                        organization_roles.push(role_to_string(&role));
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+            "organizations" => {
+                let base_url = Self::DEFAULT_BASE_URL.to_owned();
+                let ret = format!("{}organizations?limit={}", base_url, Self::PAGE_SIZE,);
+                ret
             }
+            "junction_table" => {
+                warning!("junction_table is not supported");
 
-            // Create a UserInfo struct and push it to the user_info_list
-            let user_info = UserInfo {
-                id: user.id,
-                first_name: user.first_name,
-                last_name: user.last_name,
-                email_addresses: user
-                    .email_addresses
-                    .first()
-                    .map(|email| email.email_address.clone())
-                    .unwrap_or_default(),
-                gender: user.gender,
-                created_at: user.created_at as i64,
-                updated_at: user.updated_at as i64,
-                last_sign_in_at: user.last_sign_in_at.map(|ts| ts as i64),
-                phone_numbers: user.phone_numbers,
-                username: user.username,
-                organization_names: organization_names.join(","),
-                organization_roles: organization_roles.join(","),
-            };
-            info!("User info created {:#?}", user_info);
-            user_info_list.push(user_info);
+                let base_url = Self::DEFAULT_BASE_URL.to_owned();
+                let ret = format!("{}organizations?limit={}", base_url, Self::PAGE_SIZE,);
+                ret
+            }
+            _ => {
+                warning!("unsupported object: {:#?}", obj);
+                return "".to_string();
+            }
         }
-    });
-    return user_info_list;
-}
-
-// Function to convert role enum to string
-fn role_to_string(role: &Role) -> String {
-    match role {
-        Role::Admin => "Admin".to_string(),
-        Role::BasicMember => "BasicMember".to_string(),
     }
 }
 
 impl ForeignDataWrapper for ClerkFdw {
-    // Constructor for the FDW
     fn new(options: &HashMap<String, String>) -> Self {
-        let users = Vec::new();
-
-        let api_key = options.get("api_key").cloned();
-
-        let clerk_client = None;
-
-        Self {
-            row_cnt: 0,
+        let mut ret = Self {
+            rt: create_async_runtime(),
+            token: None,
+            client: None,
             tgt_cols: Vec::new(),
-            clerk_client,
-            api_key,
-            users,
-        }
+            scan_result: None,
+        };
+
+        let token = if let Some(access_token) = options.get("api_key") {
+            access_token.to_owned()
+        } else {
+            warning!("Cannot find api_key in options");
+            let access_token = env::var("CLERK_API_KEY").unwrap();
+            access_token
+        };
+
+        ret.token = Some(token);
+
+        // create client
+        let client = reqwest::Client::new();
+        ret.client = Some(client);
+
+        ret
     }
 
-    // Begin the scan operation
     fn begin_scan(
         &mut self,
         _quals: &[Qual],
         columns: &[Column],
         _sorts: &[Sort],
         _limit: &Option<Limit>,
-        _options: &HashMap<String, String>,
+        options: &HashMap<String, String>,
     ) {
-        if let Some(ref api_key) = self.api_key {
-            let clerk_client = create_clerk_client(api_key);
-            self.clerk_client = Some(clerk_client);
-            self.users = fetch_users(&self.clerk_client, api_key);
-        } else {
-            // Handle the case where API key is not available
-            eprintln!("Error: No API key available");
-            warning!("Error: No API key available");
-        }
+        let obj = match require_option("object", options) {
+            Some(obj) => obj,
+            None => return,
+        };
 
-        self.row_cnt = 0;
+        self.scan_result = None;
         self.tgt_cols = columns.to_vec();
+        let api_key = self.token.as_ref().unwrap();
+
+        if let Some(client) = &self.client {
+            let mut result = Vec::new();
+
+            let url = self.build_url(&obj, options);
+
+            // this is where i need to make changes
+            self.rt.block_on(async {
+                let resp = client
+                    .get(&url)
+                    .header("Authorization", format!("Bearer {}", api_key))
+                    .send()
+                    .await;
+
+                match resp {
+                    Ok(mut res) => {
+                        if res.status().is_success() {
+                            let body = res.text().await.unwrap();
+                            let json: JsonValue = serde_json::from_str(&body).unwrap();
+                            let mut rows = resp_to_rows(&obj, &json, &self.tgt_cols[..]);
+                            result.append(&mut rows);
+                        } else {
+                            warning!("Failed request with status: {}", res.status());
+                        }
+                    }
+                    Err(error) => {
+                        warning!("Error: {:#?}", error);
+                        return;
+                    }
+                };
+            });
+
+            self.scan_result = Some(result);
+        }
     }
 
-    // Iterate through the scan results, populating rows with user data
-    // TODO: Convert type of created_at, updated_at, last_sign_in_at to timestamp
-    // TODO: Convert type of phone_numbers, emails, organizations and roles to array
     fn iter_scan(&mut self, row: &mut Row) -> Option<()> {
-        if let Some(user) = self.users.get(self.row_cnt as usize) {
-            for tgt_col in &self.tgt_cols {
-                match tgt_col.name.as_str() {
-                    "id" => row.push("id", Some(Cell::String(user.id.clone()))),
-                    "first_name" => {
-                        row.push("first_name", user.first_name.clone().map(Cell::String))
-                    }
-                    "last_name" => row.push("last_name", user.last_name.clone().map(Cell::String)),
-                    "email" => row.push("email", Some(Cell::String(user.email_addresses.clone()))),
-                    "gender" => row.push("gender", user.gender.clone().map(Cell::String)),
-                    "created_at" => row.push("created_at", Some(Cell::I64(user.created_at as i64))),
-                    "updated_at" => row.push("updated_at", Some(Cell::I64(user.updated_at as i64))),
-                    "last_sign_in_at" => row.push(
-                        "last_sign_in_at",
-                        user.last_sign_in_at.map(|ts| Cell::I64(ts as i64)),
-                    ),
-                    "phone_numbers" => row.push(
-                        "phone_numbers",
-                        user.phone_numbers
-                            .first()
-                            .map(|phone| Cell::String(phone.clone())),
-                    ),
-                    "username" => row.push("username", user.username.clone().map(Cell::String)),
-                    "organization" => row.push(
-                        "organization",
-                        Some(Cell::String(user.organization_names.clone())),
-                    ),
-                    "role" => row.push("role", Some(Cell::String(user.organization_roles.clone()))),
-                    _ => {}
-                }
+        if let Some(ref mut result) = self.scan_result {
+            if !result.is_empty() {
+                return result
+                    .drain(0..1)
+                    .last()
+                    .map(|src_row| row.replace_with(src_row));
             }
-            self.row_cnt += 1;
-            return Some(());
         }
         None
     }
 
     fn end_scan(&mut self) {
-        // Clean up resources here, if needed
+        self.scan_result.take();
+    }
+
+    fn validator(options: Vec<Option<String>>, catalog: Option<pg_sys::Oid>) {
+        if let Some(oid) = catalog {
+            if oid == FOREIGN_TABLE_RELATION_ID {
+                check_options_contain(&options, "object");
+            }
+        }
     }
 }
 
