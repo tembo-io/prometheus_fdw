@@ -153,7 +153,7 @@ pub(crate) struct ClerkFdw {
 impl ClerkFdw {
     const FDW_NAME: &str = "clerk_fdw";
 
-    const DEFAULT_BASE_URL: &'static str = "https://api.clerk.com/v1/";
+    const DEFAULT_BASE_URL: &'static str = "https://api.clerk.com/v1";
 
     // TODO: will have to incorportate offset at some point
     const PAGE_SIZE: usize = 500;
@@ -165,19 +165,21 @@ impl ClerkFdw {
         match obj {
             "users" => {
                 let base_url = Self::DEFAULT_BASE_URL.to_owned();
-                let ret = format!("{}users?limit={}", base_url, Self::PAGE_SIZE,);
+                let ret = format!("{}/users?limit={}", base_url, Self::PAGE_SIZE,);
                 ret
             }
             "organizations" => {
                 let base_url = Self::DEFAULT_BASE_URL.to_owned();
-                let ret = format!("{}organizations?limit={}", base_url, Self::PAGE_SIZE,);
+                let ret = format!("{}/organizations?limit={}", base_url, Self::PAGE_SIZE,);
                 ret
             }
             "junction_table" => {
                 warning!("junction_table is not supported");
 
                 let base_url = Self::DEFAULT_BASE_URL.to_owned();
-                let ret = format!("{}organizations?limit={}", base_url, Self::PAGE_SIZE,);
+                // let org_id = 'org_2UiCBb861liwYn2jAfDHe7sDrW6';
+                // let ret = format!("{}/organizations/{}/memberships?limit={}", base_url, org_id, Self::PAGE_SIZE,);
+                let ret = format!("{}/organizations?limit={}", base_url, Self::PAGE_SIZE,);
                 ret
             }
             _ => {
@@ -290,105 +292,4 @@ impl ForeignDataWrapper for ClerkFdw {
             }
         }
     }
-}
-
-// Struct to hold user information
-#[derive(Debug)]
-struct UserInfo {
-    id: String,
-    first_name: Option<String>,
-    last_name: Option<String>,
-    email_addresses: String, // ideally it would be a Vec<String>
-    gender: Option<String>,
-    created_at: i64,
-    updated_at: i64,
-    last_sign_in_at: Option<i64>,
-    phone_numbers: Vec<String>,
-    username: Option<String>,
-    organization_names: String, // ideally it would be a Vec<String>
-    organization_roles: String, // ideally it would be a Vec<String>
-                                // organizations_count: i64,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-struct Person {
-    backup_code_enabled: bool,
-    banned: bool,
-    birthday: Option<String>,
-    create_organization_enabled: bool,
-    created_at: u64,
-    delete_self_enabled: bool,
-    email_addresses: Vec<EmailAddress>,
-    external_accounts: Vec<ExternalAccount>,
-    external_id: Option<String>,
-    first_name: Option<String>,
-    gender: Option<String>,
-    has_image: bool,
-    id: String,
-    image_url: String,
-    last_name: Option<String>,
-    last_sign_in_at: Option<u64>,
-    object: String,
-    password_enabled: bool,
-    phone_numbers: Vec<String>,
-    primary_email_address_id: Option<String>,
-    primary_phone_number_id: Option<String>,
-    primary_web3_wallet_id: Option<String>,
-    private_metadata: HashMap<String, String>,
-    profile_image_url: String,
-    public_metadata: HashMap<String, String>,
-    saml_accounts: Vec<String>,
-    totp_enabled: bool,
-    two_factor_enabled: bool,
-    unsafe_metadata: UnsafeMetadata,
-    updated_at: u64,
-    username: Option<String>,
-    web3_wallets: Vec<String>,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-struct EmailAddress {
-    email_address: String,
-    id: String,
-    linked_to: Vec<LinkedTo>,
-    object: String,
-    reserved: bool,
-    verification: Verification,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-struct LinkedTo {
-    id: String,
-    #[serde(rename = "type")]
-    type_: String,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-struct Verification {
-    attempts: Option<i32>,
-    expire_at: Option<u64>,
-    status: String,
-    strategy: String,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-struct ExternalAccount {
-    approved_scopes: String,
-    email_address: String,
-    family_name: Option<String>,
-    given_name: Option<String>,
-    google_id: Option<String>,
-    id: String,
-    label: Option<String>,
-    object: String,
-    picture: Option<String>,
-    public_metadata: HashMap<String, String>,
-    username: Option<String>,
-    verification: Verification,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-struct UnsafeMetadata {
-    #[serde(default)]
-    viewed_alpha_landing: bool,
 }
