@@ -172,8 +172,6 @@ impl ClerkFdw {
                 ret
             }
             "junction_table" => {
-                warning!("junction_table is not supported");
-
                 let base_url = Self::DEFAULT_BASE_URL.to_owned();
                 let org_id = options
                     .get("organization_id")
