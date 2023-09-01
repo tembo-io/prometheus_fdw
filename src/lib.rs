@@ -47,6 +47,16 @@ fn body_to_rows(
                     current_value = current_value.unwrap().as_object().unwrap().get(part);
                 }
 
+                if *src_name == "email_addresses" {
+                    current_value = current_value
+                        .and_then(|v| v.as_array().and_then(|arr| arr.get(0)))
+                        .and_then(|first_obj| {
+                            first_obj
+                                .as_object()
+                                .and_then(|obj| obj.get("email_address"))
+                        });
+                }
+
                 let cell = current_value.and_then(|v| match *col_type {
                     "bool" => v.as_bool().map(Cell::Bool),
                     "i64" => v.as_i64().map(Cell::I64),
@@ -91,7 +101,7 @@ fn resp_to_rows(obj: &str, resp: &JsonValue, tgt_cols: &[Column]) -> Vec<Row> {
                     ("id", "user_id", "string"),
                     ("first_name", "first_name", "string"),
                     ("last_name", "last_name", "string"),
-                    ("email", "email", "string"),
+                    ("email_addresses", "email", "string"),
                     ("gender", "gender", "string"),
                     ("created_at", "created_at", "i64"),
                     ("updated_at", "updated_at", "i64"),
@@ -117,7 +127,7 @@ fn resp_to_rows(obj: &str, resp: &JsonValue, tgt_cols: &[Column]) -> Vec<Row> {
                 tgt_cols,
             );
         }
-        "junction_table" => {
+        "organization_memberships" => {
             result = body_to_rows(
                 resp,
                 "data",
@@ -138,7 +148,7 @@ fn resp_to_rows(obj: &str, resp: &JsonValue, tgt_cols: &[Column]) -> Vec<Row> {
 }
 
 #[wrappers_fdw(
-    version = "0.2.2",
+    version = "0.2.3",
     author = "Jay Kothari",
     website = "https://tembo.io"
 )]
@@ -152,8 +162,6 @@ pub(crate) struct ClerkFdw {
 }
 
 impl ClerkFdw {
-    const FDW_NAME: &str = "clerk_fdw";
-
     const DEFAULT_BASE_URL: &'static str = "https://api.clerk.com/v1";
 
     // TODO: will have to incorportate offset at some point
@@ -171,7 +179,7 @@ impl ClerkFdw {
                 let ret = format!("{}/organizations?limit={}", base_url, Self::PAGE_SIZE,);
                 ret
             }
-            "junction_table" => {
+            "organization_memberships" => {
                 let base_url = Self::DEFAULT_BASE_URL.to_owned();
                 let org_id = options
                     .get("organization_id")
@@ -239,7 +247,7 @@ impl ForeignDataWrapper for ClerkFdw {
         if let Some(client) = &self.client {
             let mut result = Vec::new();
 
-            if obj == "junction_table" {
+            if obj == "organization_memberships" {
                 // Get all organizations first
                 let org_url = self.build_url("organizations", options);
 
@@ -250,7 +258,7 @@ impl ForeignDataWrapper for ClerkFdw {
                         .send()
                         .await;
 
-                    if let Ok(mut org_res) = org_resp {
+                    if let Ok(org_res) = org_resp {
                         if org_res.status().is_success() {
                             let org_body = org_res.text().await.unwrap();
                             let org_json: JsonValue = serde_json::from_str(&org_body).unwrap();
@@ -313,7 +321,7 @@ impl ForeignDataWrapper for ClerkFdw {
                         .await;
 
                     match resp {
-                        Ok(mut res) => {
+                        Ok(res) => {
                             if res.status().is_success() {
                                 let body = res.text().await.unwrap();
                                 let json: JsonValue = serde_json::from_str(&body).unwrap();

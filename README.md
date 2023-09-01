@@ -1,19 +1,10 @@
-# Pre-requisites
+## Clerk_fdw
 
-- Postgres-15
-- Rust
-- pgrx
+This section is about how to use the clerk foreign data wrapper in the data warehouse to collect valuable analytics
 
-# Getting Started
+### Pre-requisistes
 
-To run the program locally, clone the repository
-`git clone https://github.com/tembo-io/clerk_fdw.git`
-
-Run the program using the command
-`cargo pgrx run`
-
-Create the wrapper extension
-`create extension clerk_fdw;`
+- have the v0.2.2 of `clerk_fdw` extension enabled in your instance
 
 Create the foreign data wrapper:
 
@@ -34,7 +25,10 @@ create server my_clerk_server
 
 Create Foreign Table:
 
-## User table
+### User table
+
+This table will store information about the users.
+Note: The current limit is 500 users. This should be increased in future versions.
 
 ```
 create foreign table clerk_users (
@@ -56,7 +50,10 @@ create foreign table clerk_users (
 
 ```
 
-## Organization Table
+### Organization Table
+
+This table will store information about the organizations.
+Note: The current limit is 500 organizations. This should be increased in future versions.
 
 ```
 create foreign table clerk_orgs (
@@ -73,7 +70,26 @@ options (
 );
 ```
 
+### Junction Table
+
+This table connects the `clerk_users` and `clerk_orgs`. It lists out all users and their roles in each organization.
+
+```
+create foreign table organization_memberships (
+  user_id text,
+  organization_id text,
+  role text
+)
+server my_clerk_server
+options (
+  object 'organization_memberships'
+);
+```
+
+NOTE: There is a 0.5 second sleep timer between each request so that we do not overload clerk servers. The reponse might take a while and it is reccomended that you store the information in a local table for quick access.
+
 Query from the Foreign Table:
 `select * from clerk_users`
 
-# SQL queries for most common tasks
+To get all members of an organization:
+`select * from organization_memberships where organization_id='org_id';`
