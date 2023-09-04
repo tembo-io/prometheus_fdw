@@ -301,8 +301,8 @@ impl ForeignDataWrapper for ClerkFdw {
                                             Err(_) => continue,
                                         };
 
-                                        // Introduce a delay of 0.5 seconds
-                                        std::thread::sleep(std::time::Duration::from_millis(500));
+                                        // Introduce a delay of 0.05 seconds
+                                        std::thread::sleep(std::time::Duration::from_millis(50));
                                     }
                                 }
                             }
