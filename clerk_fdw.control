@@ -1,4 +1,4 @@
-comment = 'clerk_fdw:  Created by pgrx'
+comment = 'clerk_fdw:  A foreign data wrapper for the clerk.com API'
 default_version = '@CARGO_VERSION@'
 module_pathname = '$libdir/clerk_fdw'
 relocatable = false
