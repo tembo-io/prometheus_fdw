@@ -93,48 +93,27 @@ fn resp_to_rows(obj: &str, resp: &JsonValue, tgt_cols: &[Column]) -> Vec<Row> {
     let mut result = Vec::new();
 
     match obj {
-        "users" => {
+        "metric_labels" => {
             result = body_to_rows(
                 resp,
                 "data",
                 vec![
-                    ("id", "user_id", "string"),
-                    ("first_name", "first_name", "string"),
-                    ("last_name", "last_name", "string"),
-                    ("email_addresses", "email", "string"),
-                    ("gender", "gender", "string"),
-                    ("created_at", "created_at", "i64"),
-                    ("updated_at", "updated_at", "i64"),
-                    ("last_sign_in_at", "last_sign_in_at", "i64"),
-                    ("phone_numbers", "phone_numbers", "i64"),
-                    ("username", "username", "string"),
+                    ("id", "metric_id", "i64"),
+                    ("metric_name", "metric_name", "string"),
+                    ("metric_name_label", "metric_name_label", "string"),
+                    ("metric_labels", "metric_labels", "json"),
                 ],
                 tgt_cols,
             );
         }
-        "organizations" => {
+        "metric_values" => {
             result = body_to_rows(
                 resp,
                 "data",
                 vec![
-                    ("id", "organization_id", "string"),
-                    ("name", "name", "string"),
-                    ("slug", "slug", "string"),
-                    ("created_at", "created_at", "i64"),
-                    ("updated_at", "updated_at", "i64"),
-                    ("created_by", "created_by", "string"),
-                ],
-                tgt_cols,
-            );
-        }
-        "organization_memberships" => {
-            result = body_to_rows(
-                resp,
-                "data",
-                vec![
-                    ("public_user_data.user_id", "user_id", "string"),
-                    ("organization.id", "organization_id", "string"),
-                    ("role", "role", "string"),
+                    ("id", "metric_id", "i64"),
+                    ("timestamp", "timestamp", "i64"),
+                    ("value", "value", "i64"),
                 ],
                 tgt_cols,
             );
@@ -148,88 +127,144 @@ fn resp_to_rows(obj: &str, resp: &JsonValue, tgt_cols: &[Column]) -> Vec<Row> {
 }
 
 #[wrappers_fdw(
-    version = "0.2.4",
+    version = "0.0.0",
     author = "Jay Kothari",
     website = "https://tembo.io"
 )]
 
-pub(crate) struct ClerkFdw {
+pub(crate) struct PrometheusFdw {
     rt: Runtime,
-    token: Option<String>,
     client: Option<Client>,
     scan_result: Option<Vec<Row>>,
     tgt_cols: Vec<Column>,
 }
 
-impl ClerkFdw {
-    const DEFAULT_BASE_URL: &'static str = "https://api.clerk.com/v1";
+impl PrometheusFdw {
+    const DEFAULT_BASE_URL: &'static str =
+        "https://prometheus-control-1.use1.dev.plat.cdb-svc.com/";
 
-    // TODO: will have to incorportate offset at some point
-    const PAGE_SIZE: usize = 500;
-
-    fn build_url(&self, obj: &str, options: &HashMap<String, String>) -> String {
-        match obj {
-            "users" => {
-                let base_url = Self::DEFAULT_BASE_URL.to_owned();
-                let ret = format!("{}/users?limit={}", base_url, Self::PAGE_SIZE,);
-                ret
-            }
-            "organizations" => {
-                let base_url = Self::DEFAULT_BASE_URL.to_owned();
-                let ret = format!("{}/organizations?limit={}", base_url, Self::PAGE_SIZE,);
-                ret
-            }
-            "organization_memberships" => {
-                let base_url = Self::DEFAULT_BASE_URL.to_owned();
-                let org_id = options
-                    .get("organization_id")
-                    .expect("Organization ID required");
-                let ret = format!(
-                    "{}/organizations/{}/memberships?limit={}",
-                    base_url,
-                    org_id,
-                    Self::PAGE_SIZE
-                );
-                ret
-            }
+    fn map_operator(op: &str) -> &str {
+        match op {
+            "=" => "=\"",
+            "!=" => "!=\"",
+            ">" => ">\"",
+            "<" => "<\"",
+            ">=" => ">=\"",
+            "<=" => "<=\"",
             _ => {
-                warning!("unsupported object: {:#?}", obj);
-                return "".to_string();
+                println!("unsupported operator: {}", op);
+                "\""
             }
         }
     }
+
+    fn value_to_promql_string(value: &supabase_wrappers::interface::Value) -> String {
+        match value {
+            supabase_wrappers::interface::Value::Cell(cell) => match cell {
+                supabase_wrappers::interface::Cell::String(s) => s.clone(),
+                supabase_wrappers::interface::Cell::I8(i) => i.to_string(),
+                supabase_wrappers::interface::Cell::I16(i) => i.to_string(),
+                supabase_wrappers::interface::Cell::I32(i) => i.to_string(),
+                supabase_wrappers::interface::Cell::I64(i) => i.to_string(),
+                supabase_wrappers::interface::Cell::F32(f) => f.to_string(),
+                supabase_wrappers::interface::Cell::F64(f) => f.to_string(),
+                supabase_wrappers::interface::Cell::Bool(b) => b.to_string(),
+                supabase_wrappers::interface::Cell::Date(d) => d.to_string(),
+                supabase_wrappers::interface::Cell::Timestamp(ts) => ts.to_string(),
+                supabase_wrappers::interface::Cell::Json(j) => {
+                    match serde_json::to_string(j) {
+                        Ok(s) => s,
+                        Err(e) => {
+                            eprintln!("Failed to serialize JsonB to String: {}", e);
+                            String::new() // Return an empty string on error
+                        }
+                    }
+                }
+                supabase_wrappers::interface::Cell::Numeric(n) => n.to_string(),
+            },
+            supabase_wrappers::interface::Value::Array(cells) => {
+                // Join the string representations of the cells with commas
+                cells
+                    .iter()
+                    .map(|cell| match cell {
+                        supabase_wrappers::interface::Cell::String(s) => s.clone(),
+                        supabase_wrappers::interface::Cell::I8(i) => i.to_string(),
+                        supabase_wrappers::interface::Cell::I16(i) => i.to_string(),
+                        supabase_wrappers::interface::Cell::I32(i) => i.to_string(),
+                        supabase_wrappers::interface::Cell::I64(i) => i.to_string(),
+                        supabase_wrappers::interface::Cell::F32(f) => f.to_string(),
+                        supabase_wrappers::interface::Cell::F64(f) => f.to_string(),
+                        supabase_wrappers::interface::Cell::Bool(b) => b.to_string(),
+                        supabase_wrappers::interface::Cell::Date(d) => d.to_string(),
+                        supabase_wrappers::interface::Cell::Timestamp(ts) => ts.to_string(),
+                        supabase_wrappers::interface::Cell::Json(j) => {
+                            match serde_json::to_string(j) {
+                                Ok(s) => s,
+                                Err(e) => {
+                                    eprintln!("Failed to serialize JsonB to String: {}", e);
+                                    String::new() // Return an empty string on error
+                                }
+                            }
+                        }
+                        supabase_wrappers::interface::Cell::Numeric(n) => n.to_string(),
+                    })
+                    .collect::<Vec<String>>()
+                    .join(",")
+            }
+        }
+    }
+
+    fn build_url(&self, obj: &str, _options: &HashMap<String, String>, quals: &[Qual]) -> String {
+        let base_url = "https://prometheus-control-1.use1.dev.plat.cdb-svc.com/api/v1/query";
+
+        match obj {
+            "metric_labels" | "metric_values" => {
+                // Find the metric_name filter from quals
+                let metric_name_filter = quals
+                    .iter()
+                    .find(|qual| qual.field == "metric_name" && qual.operator == "=");
+
+                // If a metric_name filter is found, build the query URL
+                if let Some(metric_name_qual) = metric_name_filter {
+                    let metric_name = Self::value_to_promql_string(&metric_name_qual.value);
+                    let ret = format!("{}?query={}", base_url, metric_name);
+                    ret
+                } else {
+                    println!("No metric_name filter found in quals");
+                    "".to_string()
+                }
+            }
+            _ => {
+                println!("unsupported object: {:#?}", obj);
+                "".to_string()
+            }
+        }
+    }
+
+    // Helper function to map SQL operators to PromQL operators
 }
 
-impl ForeignDataWrapper for ClerkFdw {
-    fn new(options: &HashMap<String, String>) -> Self {
+impl ForeignDataWrapper for PrometheusFdw {
+    fn new(_options: &HashMap<String, String>) -> Self {
         let mut ret = Self {
             rt: create_async_runtime(),
-            token: None,
             client: None,
             tgt_cols: Vec::new(),
             scan_result: None,
         };
 
-        let token = if let Some(access_token) = options.get("api_key") {
-            access_token.to_owned()
-        } else {
-            warning!("Cannot find api_key in options");
-            let access_token = env::var("CLERK_API_KEY").unwrap();
-            access_token
-        };
-
-        ret.token = Some(token);
-
         // create client
         let client = reqwest::Client::new();
         ret.client = Some(client);
+
+        warning!("created client");
 
         ret
     }
 
     fn begin_scan(
         &mut self,
-        _quals: &[Qual],
+        quals: &[Qual],
         columns: &[Column],
         _sorts: &[Sort],
         _limit: &Option<Limit>,
@@ -242,102 +277,13 @@ impl ForeignDataWrapper for ClerkFdw {
 
         self.scan_result = None;
         self.tgt_cols = columns.to_vec();
-        let api_key = self.token.as_ref().unwrap();
+        let api_key = "".to_string();
 
         if let Some(client) = &self.client {
             let mut result = Vec::new();
 
-            if obj == "organization_memberships" {
-                // Get all organizations first
-                let org_url = self.build_url("organizations", options);
-
-                self.rt.block_on(async {
-                    let org_resp = client
-                        .get(&org_url)
-                        .header("Authorization", format!("Bearer {}", api_key))
-                        .send()
-                        .await;
-
-                    if let Ok(org_res) = org_resp {
-                        if org_res.status().is_success() {
-                            let org_body = org_res.text().await.unwrap();
-                            let org_json: JsonValue = serde_json::from_str(&org_body).unwrap();
-
-                            if let Some(org_data) =
-                                org_json.get("data").and_then(|data| data.as_array())
-                            {
-                                for org in org_data {
-                                    if let Some(org_id) = org.get("id").and_then(|id| id.as_str()) {
-                                        // Build the URL for memberships using org_id
-                                        let membership_url = format!(
-                                            "{}/organizations/{}/memberships?limit={}",
-                                            Self::DEFAULT_BASE_URL,
-                                            org_id,
-                                            Self::PAGE_SIZE
-                                        );
-
-                                        let membership_resp = client
-                                            .get(&membership_url)
-                                            .header("Authorization", format!("Bearer {}", api_key))
-                                            .send()
-                                            .await;
-
-                                        match membership_resp {
-                                            Ok(mem_res) => {
-                                                if mem_res.status().is_success() {
-                                                    let mem_body = mem_res.text().await.unwrap();
-                                                    let mem_json: JsonValue =
-                                                        serde_json::from_str(&mem_body).unwrap();
-                                                    // info!("mem_json: {:#?}", mem_json);
-
-                                                    let mut rows = resp_to_rows(
-                                                        &obj,
-                                                        &mem_json,
-                                                        &self.tgt_cols[..],
-                                                    );
-                                                    result.append(&mut rows);
-                                                }
-                                            }
-                                            Err(_) => continue,
-                                        };
-
-                                        // Introduce a delay of 0.05 seconds
-                                        std::thread::sleep(std::time::Duration::from_millis(50));
-                                    }
-                                }
-                            }
-                        }
-                    }
-                });
-            } else {
-                let url = self.build_url(&obj, options);
-
-                // this is where i need to make changes
-                self.rt.block_on(async {
-                    let resp = client
-                        .get(&url)
-                        .header("Authorization", format!("Bearer {}", api_key))
-                        .send()
-                        .await;
-
-                    match resp {
-                        Ok(res) => {
-                            if res.status().is_success() {
-                                let body = res.text().await.unwrap();
-                                let json: JsonValue = serde_json::from_str(&body).unwrap();
-                                let mut rows = resp_to_rows(&obj, &json, &self.tgt_cols[..]);
-                                result.append(&mut rows);
-                            } else {
-                                warning!("Failed request with status: {}", res.status());
-                            }
-                        }
-                        Err(error) => {
-                            warning!("Error: {:#?}", error);
-                            return;
-                        }
-                    };
-                });
-            }
+            let url = self.build_url("metric_labels", options, quals);
+            warning!("url: {}", url);
 
             self.scan_result = Some(result);
         }

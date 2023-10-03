@@ -1,6 +1,6 @@
 [package]
-name = "clerk_fdw"
-version = "0.2.4"
+name = "prometheus_fdw"
+version = "0.0.0"
 edition = "2021"
 
 [lib]
@@ -17,7 +17,6 @@ pg_test = []
 
 [dependencies]
 chrono = "0.4.26"
-clerk-rs = "0.1.7"
 pgrx = "=0.9.7"
 reqwest = "0.11.18"
 reqwest-middleware = "0.2.3"

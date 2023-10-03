@@ -1,95 +1,53 @@
-## Clerk_fdw
-
-This section is about how to use the clerk foreign data wrapper in the data warehouse to collect valuable analytics
+## Prometheus_fdw
 
 ### Pre-requisistes
 
-- have the v0.2.2 of `clerk_fdw` extension enabled in your instance
+- have the v0.2.2 of `prometheus_fdw` extension enabled in your instance
+
+`create extension prometheus_fdw;`
 
 Create the foreign data wrapper:
 
 ```
-create foreign data wrapper clerk_wrapper
-  handler clerk_fdw_handler
-  validator clerk_fdw_validator;
+create foreign data wrapper prometheus_wrapper
+  handler prometheus_fdw_handler
+  validator prometheus_fdw_validator;
 ```
 
-Connect to clerk using your credentials:
-
 ```
-create server my_clerk_server
-  foreign data wrapper clerk_wrapper
-  options (
-    api_key '<clerk secret Key>')
+create server my_prometheus_server
+  foreign data wrapper prometheus_wrapper;
 ```
 
 Create Foreign Table:
 
-### User table
-
-This table will store information about the users.
-Note: The current limit is 500 users. This should be increased in future versions.
+### Metric Labels Table
 
 ```
-create foreign table clerk_users (
-  user_id text,
-  first_name text,
-  last_name text,
-  email text,
-  gender text,
-  created_at bigint,
-  updated_at bigint,
-  last_sign_in_at bigint,
-  phone_numbers bigint,
-  username text
-  )
-  server my_clerk_server
-  options (
-      object 'users'
-  );
-
-```
-
-### Organization Table
-
-This table will store information about the organizations.
-Note: The current limit is 500 organizations. This should be increased in future versions.
-
-```
-create foreign table clerk_organizations (
-  organization_id text,
-  name text,
-  slug text,
-  created_at bigint,
-  updated_at bigint,
-  created_by text
+CREATE FOREIGN TABLE IF NOT EXISTS metric_labels (
+  metric_id BIGINT,
+  metric_name TEXT NOT NULL,
+  metric_name_label TEXT NOT NULL,
+  metric_labels jsonb
 )
-server my_clerk_server
-options (
-  object 'organizations'
+SERVER my_prometheus_server
+OPTIONS (
+  object 'metric_labels'
 );
 ```
 
-### Junction Table
+### Metrics Value Table
 
-This table connects the `clerk_users` and `clerk_orgs`. It lists out all users and their roles in each organization.
+NOTE: NEED TO ADD PARTIONTION TO THIS TABLE
 
 ```
-create foreign table clerk_organization_memberships (
-  user_id text,
-  organization_id text,
-  role text
-)
-server my_clerk_server
+CREATE FOREIGN TABLE IF NOT EXISTS metric_values (
+  metric_id BIGINT, 
+  metric_time TIMESTAMPTZ, 
+  metric_value FLOAT8 
+  ) 
+server my_prometheus_server
 options (
-  object 'organization_memberships'
+  object 'metric_values'
 );
 ```
-
-NOTE: There is a 0.5 second sleep timer between each request so that we do not overload clerk servers. The reponse might take a while and it is reccomended that you store the information in a local table for quick access.
-
-Query from the Foreign Table:
-`select * from clerk_users`
-
-To get all members of an organization:
-`select * from organization_memberships where organization_id='org_id';`

@@ -1,0 +1,5 @@
+comment = 'prometheus_fdw:  A foreign data wrapper for prometheus'
+default_version = '@CARGO_VERSION@'
+module_pathname = '$libdir/prometheus_fdw'
+relocatable = false
+superuser = true
