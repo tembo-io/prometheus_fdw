@@ -228,7 +228,8 @@ impl PrometheusFdw {
                 if let Some(metric_name_qual) = metric_name_filter {
                     let metric_name = Self::value_to_promql_string(&metric_name_qual.value);
                     let ret = format!("{}?query={}", base_url, metric_name);
-                    warning!("ret: {}", ret);
+                    warning!("inside metric_labels");
+                    warning!("Constructed URL: {}", ret);
                     ret
                 } else {
                     println!("No metric_name filter found in quals");
@@ -254,7 +255,8 @@ impl PrometheusFdw {
                         "{}_range?query=container_threads&start={}&end={}&step=1m",
                         base_url, lower_timestamp, upper_timestamp
                     );
-                    println!("Constructed URL: {}", ret); // Add logging here
+                    warning!("inside metric_values");
+                    warning!("Constructed URL: {}", ret);
                     ret
                 } else {
                     println!("Timestamp filters not found in quals");
@@ -283,8 +285,6 @@ impl ForeignDataWrapper for PrometheusFdw {
         // create client
         let client = reqwest::Client::new();
         ret.client = Some(client);
-
-        warning!("created client");
 
         ret
     }

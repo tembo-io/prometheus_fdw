@@ -52,3 +52,17 @@ options (
 );
 ```
 SELECT * FROM metric_values WHERE metric_time > 1696046400 AND metric_time < 1696132800;
+
+SELECT 
+    label.metric_name AS metric_label,
+    value.metric_time,
+    value.metric_value
+FROM 
+    metric_labels AS label
+JOIN 
+    metric_values AS value
+ON 
+    label.metric_id = value.metric_id
+WHERE 
+    label.metric_name = 'container_threads' AND
+    value.metric_time < 1696046400 AND value.metric_time > 1696132800;
