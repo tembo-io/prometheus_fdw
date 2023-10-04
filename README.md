@@ -43,7 +43,7 @@ NOTE: NEED TO ADD PARTIONTION TO THIS TABLE
 ```
 CREATE FOREIGN TABLE IF NOT EXISTS metric_values (
   metric_id BIGINT, 
-  metric_time TIMESTAMPTZ, 
+  metric_time BIGINT, 
   metric_value FLOAT8 
   ) 
 server my_prometheus_server
@@ -51,3 +51,4 @@ options (
   object 'metric_values'
 );
 ```
+SELECT * FROM metric_values WHERE metric_time > 1696046400 AND metric_time < 1696132800;

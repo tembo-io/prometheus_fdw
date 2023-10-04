@@ -218,7 +218,7 @@ impl PrometheusFdw {
         let base_url = "https://prometheus-control-1.use1.dev.plat.cdb-svc.com/api/v1/query";
 
         match obj {
-            "metric_labels" | "metric_values" => {
+            "metric_labels" => {
                 // Find the metric_name filter from quals
                 let metric_name_filter = quals
                     .iter()
@@ -228,9 +228,36 @@ impl PrometheusFdw {
                 if let Some(metric_name_qual) = metric_name_filter {
                     let metric_name = Self::value_to_promql_string(&metric_name_qual.value);
                     let ret = format!("{}?query={}", base_url, metric_name);
+                    warning!("ret: {}", ret);
                     ret
                 } else {
                     println!("No metric_name filter found in quals");
+                    "".to_string()
+                }
+            }
+            "metric_values" => {
+                let lower_timestamp = quals
+                    .iter()
+                    .find(|qual| qual.field == "metric_time" && qual.operator == ">");
+
+                let upper_timestamp = quals
+                    .iter()
+                    .find(|qual| qual.field == "metric_time" && qual.operator == "<");
+
+                // If both lower and upper timestamp filters are found, build the query URL
+                if let (Some(lower_timestamp), Some(upper_timestamp)) =
+                    (lower_timestamp, upper_timestamp)
+                {
+                    let lower_timestamp = Self::value_to_promql_string(&lower_timestamp.value);
+                    let upper_timestamp = Self::value_to_promql_string(&upper_timestamp.value);
+                    let ret = format!(
+                        "{}_range?query=container_threads&start={}&end={}&step=1m",
+                        base_url, lower_timestamp, upper_timestamp
+                    );
+                    println!("Constructed URL: {}", ret); // Add logging here
+                    ret
+                } else {
+                    println!("Timestamp filters not found in quals");
                     "".to_string()
                 }
             }
@@ -282,8 +309,33 @@ impl ForeignDataWrapper for PrometheusFdw {
         if let Some(client) = &self.client {
             let mut result = Vec::new();
 
-            let url = self.build_url("metric_labels", options, quals);
-            warning!("url: {}", url);
+            if obj == "metric_labels" || obj == "metric_values" {
+                let url = self.build_url(&obj, options, quals);
+                warning!("url: {}", url);
+
+                let resp = self.rt.block_on(async { client.get(&url).send().await });
+
+                match resp {
+                    Ok(resp) => {
+                        let body = self.rt.block_on(async { resp.text().await });
+                        match body {
+                            Ok(body) => {
+                                // warning!("body: {}", body);
+                                let json: JsonValue = serde_json::from_str(&body).unwrap();
+                                // warning!("json: {:#?}", json[0]);
+                                result = resp_to_rows(&obj, &json, columns);
+                                // warning!("result: {:#?}", result);
+                            }
+                            Err(e) => {
+                                warning!("failed to get body: {}", e);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        warning!("failed to get response: {}", e);
+                    }
+                }
+            }
 
             self.scan_result = Some(result);
         }
