@@ -51,6 +51,50 @@ options (
   object 'metric_values'
 );
 ```
+
+CREATE FOREIGN TABLE IF NOT EXISTS metrics (
+  metric_name TEXT,
+  metric_labels JSONB,
+  metric_time BIGINT, 
+  metric_value FLOAT8
+  ) 
+server my_prometheus_server
+options (
+  object 'metrics'
+);
+
+
+-- Create metric_labels table
+CREATE TABLE public.metric_labels_local (
+    metric_id BIGINT NOT NULL,
+    metric_name TEXT NOT NULL,
+    metric_name_label TEXT NOT NULL,
+    metric_labels JSONB,
+    PRIMARY KEY (metric_id),
+    UNIQUE (metric_name, metric_labels)
+);
+
+-- Create indexes for metric_labels table
+CREATE INDEX metric_labels_labels_idx ON public.metric_labels USING gin (metric_labels);
+
+-- Create partitioned metric_values_local table
+CREATE TABLE public.metric_values_local (
+    metric_id BIGINT NOT NULL,
+    metric_time BIGINT,
+    metric_value DOUBLE PRECISION NOT NULL
+) PARTITION BY RANGE (metric_time);
+
+-- Create indexes for metric_values table
+CREATE INDEX metric_values_id_time_idx ON public.metric_values (metric_id, metric_time DESC);
+CREATE INDEX metric_values_time_idx ON public.metric_values (metric_time DESC);
+
+-- You can create a partition of metric_values table for a specific date range like so:
+CREATE TABLE public.metric_values_20231002 PARTITION OF public.metric_values
+    FOR VALUES FROM ('2023-10-02 00:00:00+00') TO ('2023-10-03 00:00:00+00');
+
+
+
+
 SELECT * FROM metric_values WHERE metric_time > 1696046400 AND metric_time < 1696132800;
 
 SELECT 
