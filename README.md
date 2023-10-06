@@ -7,6 +7,8 @@ NOTE: add a cron job to make this automatic
 
 - have the latest version of `prometheus_fdw` extension enabled in your instance
 
+### Set-up 
+
 `create extension prometheus_fdw;`
 
 Create the foreign data wrapper:
@@ -84,20 +86,6 @@ select * from metrics where metric_name='container_cpu_usage_seconds_total' AND 
 ```
 
 To save information for long term and/or analysis 
-```
-INSERT INTO public.metric_labels (name, labels)
-SELECT 
-    metric_name, 
-    metric_labels
-FROM metrics_local
-WHERE 
-    metric_time > 1696046800 AND metric_time < 1696133000
-    AND metric_name = 'container_cpu_usage_seconds_total'
-ON CONFLICT (name, labels) DO NOTHING;
-```
-
-To store values for long term and/or analysis
-
 ```
 INSERT INTO public.metric_labels (name, labels)
 SELECT 
