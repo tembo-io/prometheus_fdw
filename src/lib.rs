@@ -71,7 +71,7 @@ pub(crate) struct PrometheusFdw {
 
 impl PrometheusFdw {
     const DEFAULT_BASE_URL: &'static str =
-        "https://prometheus-control-1.use1.dev.plat.cdb-svc.com/api/v1/query";
+        "https://prometheus-data-1.use1.prod.plat.cdb-svc.com//api/v1/query";
 
     fn value_to_promql_string(value: &supabase_wrappers::interface::Value) -> String {
         match value {

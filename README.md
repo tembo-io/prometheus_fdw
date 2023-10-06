@@ -1,8 +1,11 @@
 ## Prometheus_fdw
+NOTE: ask the user to enter the link to prometheus
+NOTE: update step value
+NOTE: add a cron job to make this automatic
 
 ### Pre-requisistes
 
-- have the v0.2.2 of `prometheus_fdw` extension enabled in your instance
+- have the latest version of `prometheus_fdw` extension enabled in your instance
 
 `create extension prometheus_fdw;`
 
@@ -14,6 +17,8 @@ create foreign data wrapper prometheus_wrapper
   validator prometheus_fdw_validator;
 ```
 
+Create the server:
+
 ```
 create server my_prometheus_server
   foreign data wrapper prometheus_wrapper;
@@ -21,37 +26,7 @@ create server my_prometheus_server
 
 Create Foreign Table:
 
-### Metric Labels Table
-
 ```
-CREATE FOREIGN TABLE IF NOT EXISTS metric_labels (
-  metric_id BIGINT,
-  metric_name TEXT NOT NULL,
-  metric_name_label TEXT NOT NULL,
-  metric_labels jsonb
-)
-SERVER my_prometheus_server
-OPTIONS (
-  object 'metric_labels'
-);
-```
-
-### Metrics Value Table
-
-NOTE: NEED TO ADD PARTIONTION TO THIS TABLE
-
-```
-CREATE FOREIGN TABLE IF NOT EXISTS metric_values (
-  metric_id BIGINT, 
-  metric_time BIGINT, 
-  metric_value FLOAT8 
-  ) 
-server my_prometheus_server
-options (
-  object 'metric_values'
-);
-```
-
 CREATE FOREIGN TABLE IF NOT EXISTS metrics (
   metric_name TEXT,
   metric_labels JSONB,
@@ -62,51 +37,104 @@ server my_prometheus_server
 options (
   object 'metrics'
 );
+```
 
 
--- Create metric_labels table
-CREATE TABLE public.metric_labels_local (
-    metric_id BIGINT NOT NULL,
-    metric_name TEXT NOT NULL,
-    metric_name_label TEXT NOT NULL,
-    metric_labels JSONB,
-    PRIMARY KEY (metric_id),
-    UNIQUE (metric_name, metric_labels)
+Create tables to store information locally:
+
+```
+CREATE TABLE IF NOT EXISTS metrics_local (
+  metric_name TEXT,
+  metric_labels JSONB,
+  metric_time BIGINT, 
+  metric_value FLOAT8
 );
 
--- Create indexes for metric_labels table
-CREATE INDEX metric_labels_labels_idx ON public.metric_labels USING gin (metric_labels);
+-- Create metric_labels table
+CREATE TABLE public.metric_labels (
+    id BIGSERIAL NOT NULL,
+    name TEXT NOT NULL,
+    labels JSONB,
+    PRIMARY KEY (id),
+    UNIQUE (name, labels)
+);
 
--- Create partitioned metric_values_local table
-CREATE TABLE public.metric_values_local (
-    metric_id BIGINT NOT NULL,
-    metric_time BIGINT,
-    metric_value DOUBLE PRECISION NOT NULL
-) PARTITION BY RANGE (metric_time);
+-- Create partitioned metric_values table
+CREATE TABLE public.metric_values (
+    id BIGINT NOT NULL,
+    time BIGINT,
+    value DOUBLE PRECISION NOT NULL
+);
+```
 
--- Create indexes for metric_values table
-CREATE INDEX metric_values_id_time_idx ON public.metric_values (metric_id, metric_time DESC);
-CREATE INDEX metric_values_time_idx ON public.metric_values (metric_time DESC);
+NOTE: need to index and partition the tables
 
--- You can create a partition of metric_values table for a specific date range like so:
-CREATE TABLE public.metric_values_20231002 PARTITION OF public.metric_values
-    FOR VALUES FROM ('2023-10-02 00:00:00+00') TO ('2023-10-03 00:00:00+00');
+## Queries
 
+To simply run the fdw and look at values
 
+```
+select * from metrics where metric_name='container_cpu_usage_seconds_total' AND metric_time > 1696046800 AND metric_time < 1696133000;
+```
 
+To store the information in your local database for future use
+```
+INSERT INTO metrics_local
+select * from metrics where metric_name='container_cpu_usage_seconds_total' AND metric_time > 1696046800 AND metric_time < 1696046800;
+```
 
-SELECT * FROM metric_values WHERE metric_time > 1696046400 AND metric_time < 1696132800;
-
+To save information for long term and/or analysis 
+```
+INSERT INTO public.metric_labels (name, labels)
 SELECT 
-    label.metric_name AS metric_label,
-    value.metric_time,
-    value.metric_value
-FROM 
-    metric_labels AS label
-JOIN 
-    metric_values AS value
-ON 
-    label.metric_id = value.metric_id
+    metric_name, 
+    metric_labels
+FROM metrics_local
 WHERE 
-    label.metric_name = 'container_threads' AND
-    value.metric_time < 1696046400 AND value.metric_time > 1696132800;
+    metric_time > 1696046800 AND metric_time < 1696133000
+    AND metric_name = 'container_cpu_usage_seconds_total'
+ON CONFLICT (name, labels) DO NOTHING;
+```
+
+To store values for long term and/or analysis
+
+```
+INSERT INTO public.metric_labels (name, labels)
+SELECT 
+    metric_name, 
+    metric_labels
+FROM metrics_local
+WHERE 
+    metric_time > 1696046800 AND metric_time < 1696133000
+    AND metric_name = 'container_cpu_usage_seconds_total'
+ON CONFLICT (name, labels) DO NOTHING;
+```
+
+To store values for long term and/or analysis
+
+```
+ALTER TABLE metric_values
+ADD CONSTRAINT metric_values_unique UNIQUE (id, time);
+```
+
+```
+INSERT INTO metric_values (id, time, value)
+SELECT
+    mlab.id,
+    ml.metric_time,
+    ml.metric_value
+FROM
+    metrics_local ml
+INNER JOIN
+    metric_labels mlab
+ON
+    ml.metric_name = mlab.name AND ml.metric_labels = mlab.labels
+ON CONFLICT (id, time) DO NOTHING;
+```
+
+
+
+
+
+    
+
