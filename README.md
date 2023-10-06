@@ -1,7 +1,7 @@
 ## Prometheus_fdw
-NOTE: ask the user to enter the link to prometheus
 NOTE: update step value
 NOTE: add a cron job to make this automatic
+NOTE: write tests
 
 ### Pre-requisistes
 
@@ -23,7 +23,9 @@ Create the server:
 
 ```
 create server my_prometheus_server
-  foreign data wrapper prometheus_wrapper;
+  foreign data wrapper prometheus_wrapper
+  options (
+    base_url '<base prometheus url>');
 ```
 
 Create Foreign Table:
@@ -119,10 +121,3 @@ ON
     ml.metric_name = mlab.name AND ml.metric_labels = mlab.labels
 ON CONFLICT (id, time) DO NOTHING;
 ```
-
-
-
-
-
-    
-

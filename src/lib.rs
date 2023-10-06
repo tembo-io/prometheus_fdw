@@ -64,14 +64,13 @@ fn resp_to_rows(obj: &str, resp: &JsonValue) -> Vec<Row> {
 
 pub(crate) struct PrometheusFdw {
     rt: Runtime,
+    base_url: Option<String>,
     client: Option<Client>,
     scan_result: Option<Vec<Row>>,
     tgt_cols: Vec<Column>,
 }
 
 impl PrometheusFdw {
-    const DEFAULT_BASE_URL: &'static str = "https://prometheus-data-1.use1.prod.plat.cdb-svc.com";
-
     fn value_to_promql_string(value: &supabase_wrappers::interface::Value) -> String {
         match value {
             supabase_wrappers::interface::Value::Cell(cell) => match cell {
@@ -111,7 +110,7 @@ impl PrometheusFdw {
                     let upper_timestamp = Self::value_to_promql_string(&upper_timestamp.value);
                     let ret = format!(
                         "{}/api/v1/query_range?query={}&start={}&end={}&step=10m",
-                        Self::DEFAULT_BASE_URL,
+                        self.base_url.as_ref().unwrap(),
                         metric_name,
                         lower_timestamp,
                         upper_timestamp
@@ -131,13 +130,24 @@ impl PrometheusFdw {
 }
 
 impl ForeignDataWrapper for PrometheusFdw {
-    fn new(_options: &HashMap<String, String>) -> Self {
+    fn new(options: &HashMap<String, String>) -> Self {
         let mut ret = Self {
             rt: create_async_runtime(),
+            base_url: None,
             client: None,
             tgt_cols: Vec::new(),
             scan_result: None,
         };
+
+        let base_url = if let Some(prom_url) = options.get("base_url") {
+            prom_url.to_owned()
+        } else {
+            warning!("Cannot find prometheus base url in options");
+            let prom_url = env::var("PROMETHEUS_BASE_URL").unwrap();
+            prom_url
+        };
+
+        ret.base_url = Some(base_url);
         ret.client = Some(reqwest::Client::new());
 
         ret
