@@ -70,61 +70,21 @@ pub(crate) struct PrometheusFdw {
 }
 
 impl PrometheusFdw {
-    const DEFAULT_BASE_URL: &'static str =
-        "https://prometheus-data-1.use1.prod.plat.cdb-svc.com//api/v1/query";
+    const DEFAULT_BASE_URL: &'static str = "https://prometheus-data-1.use1.prod.plat.cdb-svc.com";
 
     fn value_to_promql_string(value: &supabase_wrappers::interface::Value) -> String {
         match value {
             supabase_wrappers::interface::Value::Cell(cell) => match cell {
                 supabase_wrappers::interface::Cell::String(s) => s.clone(),
-                supabase_wrappers::interface::Cell::I8(i) => i.to_string(),
-                supabase_wrappers::interface::Cell::I16(i) => i.to_string(),
                 supabase_wrappers::interface::Cell::I32(i) => i.to_string(),
-                supabase_wrappers::interface::Cell::I64(i) => i.to_string(),
-                supabase_wrappers::interface::Cell::F32(f) => f.to_string(),
-                supabase_wrappers::interface::Cell::F64(f) => f.to_string(),
-                supabase_wrappers::interface::Cell::Bool(b) => b.to_string(),
-                supabase_wrappers::interface::Cell::Date(d) => d.to_string(),
-                supabase_wrappers::interface::Cell::Timestamp(ts) => ts.to_string(),
-                supabase_wrappers::interface::Cell::Json(j) => {
-                    match serde_json::to_string(j) {
-                        Ok(s) => s,
-                        Err(e) => {
-                            eprintln!("Failed to serialize JsonB to String: {}", e);
-                            String::new() // Return an empty string on error
-                        }
-                    }
+                _ => {
+                    println!("Unsupported cell: {:?}", cell);
+                    String::new()
                 }
-                supabase_wrappers::interface::Cell::Numeric(n) => n.to_string(),
             },
-            supabase_wrappers::interface::Value::Array(cells) => {
-                // Join the string representations of the cells with commas
-                cells
-                    .iter()
-                    .map(|cell| match cell {
-                        supabase_wrappers::interface::Cell::String(s) => s.clone(),
-                        supabase_wrappers::interface::Cell::I8(i) => i.to_string(),
-                        supabase_wrappers::interface::Cell::I16(i) => i.to_string(),
-                        supabase_wrappers::interface::Cell::I32(i) => i.to_string(),
-                        supabase_wrappers::interface::Cell::I64(i) => i.to_string(),
-                        supabase_wrappers::interface::Cell::F32(f) => f.to_string(),
-                        supabase_wrappers::interface::Cell::F64(f) => f.to_string(),
-                        supabase_wrappers::interface::Cell::Bool(b) => b.to_string(),
-                        supabase_wrappers::interface::Cell::Date(d) => d.to_string(),
-                        supabase_wrappers::interface::Cell::Timestamp(ts) => ts.to_string(),
-                        supabase_wrappers::interface::Cell::Json(j) => {
-                            match serde_json::to_string(j) {
-                                Ok(s) => s,
-                                Err(e) => {
-                                    eprintln!("Failed to serialize JsonB to String: {}", e);
-                                    String::new() // Return an empty string on error
-                                }
-                            }
-                        }
-                        supabase_wrappers::interface::Cell::Numeric(n) => n.to_string(),
-                    })
-                    .collect::<Vec<String>>()
-                    .join(",")
+            _ => {
+                println!("Unsupported value: {:?}", value);
+                String::new()
             }
         }
     }
@@ -150,7 +110,7 @@ impl PrometheusFdw {
                     let lower_timestamp = Self::value_to_promql_string(&lower_timestamp.value);
                     let upper_timestamp = Self::value_to_promql_string(&upper_timestamp.value);
                     let ret = format!(
-                        "{}_range?query={}&start={}&end={}&step=10m",
+                        "{}/api/v1/query_range?query={}&start={}&end={}&step=10m",
                         Self::DEFAULT_BASE_URL,
                         metric_name,
                         lower_timestamp,
@@ -158,7 +118,7 @@ impl PrometheusFdw {
                     );
                     ret
                 } else {
-                    println!("Timestamp filters not found in quals");
+                    println!("filters not found in quals");
                     "".to_string()
                 }
             }
@@ -168,8 +128,6 @@ impl PrometheusFdw {
             }
         }
     }
-
-    // Helper function to map SQL operators to PromQL operators
 }
 
 impl ForeignDataWrapper for PrometheusFdw {
@@ -180,10 +138,7 @@ impl ForeignDataWrapper for PrometheusFdw {
             tgt_cols: Vec::new(),
             scan_result: None,
         };
-
-        // create client
-        let client = reqwest::Client::new();
-        ret.client = Some(client);
+        ret.client = Some(reqwest::Client::new());
 
         ret
     }
