@@ -1,6 +1,7 @@
 ## Prometheus_fdw
 NOTE: add a cron job to make this automatic
 NOTE: write tests
+NOTE: add indexing and partioning
 
 ### Pre-requisistes
 
@@ -121,3 +122,42 @@ ON
     ml.metric_name = mlab.name AND ml.metric_labels = mlab.labels
 ON CONFLICT (id, time) DO NOTHING;
 ```
+
+
+### Performance improvements:
+
+Indexing:
+
+```
+CREATE INDEX IF NOT EXISTS metric_labels_labels_idx ON metric_labels USING GIN (labels);
+
+CREATE INDEX IF NOT EXISTS metric_values_id_time_idx on metric_values USING btree (id, time DESC); 
+
+CREATE INDEX IF NOT EXISTS metric_values_time_idx  on metric_values USING btree (time DESC);
+```
+
+Partioning:
+
+```
+DO $$
+DECLARE
+    day_offset INT;
+    day_start BIGINT;
+    day_end BIGINT;
+BEGIN
+    -- Adjust the generate_series values to fit your desired range of dates.
+    -- Here it's set to create partitions for 30 days from 30 days ago to yesterday.
+    FOR day_offset IN SELECT generate_series(0, 29) AS day_num LOOP
+        day_start := EXTRACT(EPOCH FROM date_trunc('day', current_date - day_offset))::BIGINT;
+        day_end := EXTRACT(EPOCH FROM (date_trunc('day', current_date - day_offset) + interval '1 day') - interval '1 second')::BIGINT;
+        EXECUTE format(
+            'CREATE TABLE IF NOT EXISTS metric_values_%s PARTITION OF metric_values FOR VALUES FROM (%s) TO (%s)',
+            TO_CHAR(current_date - day_offset, 'YYYY_MM_DD'),
+            day_start,
+            day_end
+        );
+    END LOOP;
+END $$;
+```
+
+to drop partitionss:
