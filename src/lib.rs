@@ -88,7 +88,14 @@ impl PrometheusFdw {
         }
     }
 
-    fn build_url(&self, obj: &str, _options: &HashMap<String, String>, quals: &[Qual]) -> String {
+    fn build_url(&self, obj: &str, options: &HashMap<String, String>, quals: &[Qual]) -> String {
+        let step = if let Some(step_value) = options.get("step") {
+            step_value.to_owned()
+        } else {
+            warning!("Using default value of 10m for step");
+            let step_value = "10m".to_string();
+            step_value
+        };
         match obj {
             "metrics" => {
                 let metric_name_filter = quals
@@ -109,11 +116,12 @@ impl PrometheusFdw {
                     let lower_timestamp = Self::value_to_promql_string(&lower_timestamp.value);
                     let upper_timestamp = Self::value_to_promql_string(&upper_timestamp.value);
                     let ret = format!(
-                        "{}/api/v1/query_range?query={}&start={}&end={}&step=10m",
+                        "{}/api/v1/query_range?query={}&start={}&end={}&step={}",
                         self.base_url.as_ref().unwrap(),
                         metric_name,
                         lower_timestamp,
-                        upper_timestamp
+                        upper_timestamp,
+                        step
                     );
                     ret
                 } else {

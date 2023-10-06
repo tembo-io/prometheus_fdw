@@ -1,5 +1,4 @@
 ## Prometheus_fdw
-NOTE: update step value
 NOTE: add a cron job to make this automatic
 NOTE: write tests
 
@@ -39,7 +38,8 @@ CREATE FOREIGN TABLE IF NOT EXISTS metrics (
   ) 
 server my_prometheus_server
 options (
-  object 'metrics'
+  object 'metrics',
+  step '10m'
 );
 ```
 
