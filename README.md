@@ -1,7 +1,6 @@
 ## Prometheus_fdw
 NOTE: add a cron job to make this automatic
 NOTE: write tests
-NOTE: add indexing and partioning
 
 ### Pre-requisistes
 
@@ -64,28 +63,35 @@ CREATE TABLE public.metric_labels (
     UNIQUE (name, labels)
 );
 
--- Create partitioned metric_values table
+-- Create metric_values table
 CREATE TABLE public.metric_values (
     id BIGINT NOT NULL,
     time BIGINT,
-    value DOUBLE PRECISION NOT NULL
-);
+    value DOUBLE PRECISION NOT NULL,
+    CONSTRAINT metric_values_unique UNIQUE (id, time)
+) PARTITION BY RANGE (time);
 ```
-
-NOTE: need to index and partition the tables
 
 ## Queries
 
 To simply run the fdw and look at values
 
 ```
-select * from metrics where metric_name='container_cpu_usage_seconds_total' AND metric_time > 1696046800 AND metric_time < 1696133000;
+SELECT 
+  * 
+FROM metrics 
+WHERE 
+  metric_name='container_cpu_usage_seconds_total' 
+  AND metric_time > 1696046800 AND metric_time < 1696133000;
 ```
 
 To store the information in your local database for future use
 ```
 INSERT INTO metrics_local
-select * from metrics where metric_name='container_cpu_usage_seconds_total' AND metric_time > 1696046800 AND metric_time < 1696046800;
+SELECT * FROM metrics 
+WHERE 
+  metric_name='container_cpu_usage_seconds_total' 
+  AND metric_time > 1696046800 AND metric_time < 1696046800;
 ```
 
 To save information for long term and/or analysis 
@@ -102,12 +108,6 @@ ON CONFLICT (name, labels) DO NOTHING;
 ```
 
 To store values for long term and/or analysis
-
-```
-ALTER TABLE metric_values
-ADD CONSTRAINT metric_values_unique UNIQUE (id, time);
-```
-
 ```
 INSERT INTO metric_values (id, time, value)
 SELECT
@@ -119,14 +119,13 @@ FROM
 INNER JOIN
     metric_labels mlab
 ON
-    ml.metric_name = mlab.name AND ml.metric_labels = mlab.labels
+    ml.metric_labels = mlab.labels
 ON CONFLICT (id, time) DO NOTHING;
 ```
 
-
 ### Performance improvements:
 
-Indexing:
+#### Indexing:
 
 ```
 CREATE INDEX IF NOT EXISTS metric_labels_labels_idx ON metric_labels USING GIN (labels);
@@ -136,8 +135,8 @@ CREATE INDEX IF NOT EXISTS metric_values_id_time_idx on metric_values USING btre
 CREATE INDEX IF NOT EXISTS metric_values_time_idx  on metric_values USING btree (time DESC);
 ```
 
-Partioning:
-
+#### Partioning:
+This script creates partitions for the past 30 days
 ```
 DO $$
 DECLARE
@@ -160,4 +159,19 @@ BEGIN
 END $$;
 ```
 
-to drop partitionss:
+To drop partitions:
+```
+DO $$
+  DECLARE
+      r RECORD;
+  BEGIN
+      FOR r IN (
+          SELECT table_name
+          FROM information_schema.tables
+          WHERE table_name LIKE 'metric_values_%'
+          AND table_schema = 'public'  -- Adjust schema name if necessary
+      ) LOOP
+          EXECUTE format('DROP TABLE %I CASCADE', r.table_name);
+      END LOOP;
+  END $$;
+```
