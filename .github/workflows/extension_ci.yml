@@ -1,80 +1,80 @@
-# name: Prometheus FDW Extension
+name: Prometheus FDW Extension
 
-# defaults:
-#   run:
-#     shell: bash
-#     working-directory: ./
+defaults:
+  run:
+    shell: bash
+    working-directory: ./
 
-# on:
-#   pull_request:
-#     branches:
-#       - main
-#   push:
-#     branches:
-#       - main
-#   release:
-#     types:
-#       - created
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  release:
+    types:
+      - created
 
-# jobs:
-#   lint:
-#     name: Run linters
-#     runs-on: ubuntu-22.04
-#     steps:
-#       - uses: actions/checkout@v3
-#       - name: Install Rust minimal nightly with clippy and rustfmt
-#         uses: actions-rs/toolchain@v1
-#         with:
-#           profile: minimal
-#           toolchain: nightly
-#           components: rustfmt, clippy
-#       - uses: Swatinem/rust-cache@v2
-#         with:
-#           prefix-key: "prometheus_fdw-extension-lint"
-#           # Update cache directories as needed
-#           cache-directories: |
-#             /home/runner/.pgrx
-#       - uses: ./.github/actions/pgx-init
-#         with:
-#           working-directory: ./
-#       - name: Cargo format
-#         run: cargo +nightly fmt --all --check
-#       - name: Clippy
-#         run: cargo clippy
+jobs:
+  lint:
+    name: Run linters
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install Rust minimal nightly with clippy and rustfmt
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: "prometheus_fdw-extension-lint"
+          # Update cache directories as needed
+          cache-directories: |
+            /home/runner/.pgrx
+      - uses: ./.github/actions/pgx-init
+        with:
+          working-directory: ./
+      - name: Cargo format
+        run: cargo +nightly fmt --all --check
+      - name: Clippy
+        run: cargo clippy
 
-#   publish:
-#     # only publish release events
-#     if: github.event_name == 'release'
-#     name: trunk publish
-#     runs-on: ubuntu-22.04
-#     steps:
-#       - uses: actions/checkout@v2
-#       - name: Install Rust stable toolchain
-#         uses: actions-rs/toolchain@v1
-#         with:
-#           toolchain: stable
-#       - uses: Swatinem/rust-cache@v2
-#         with:
-#           prefix-key: "prometheus_fdw-extension-test"
-#           cache-directories: |
-#             /home/runner/.pgrx
-#       - name: Install stoml and pg-trunk
-#         shell: bash
-#         run: |
-#           set -xe
-#           wget https://github.com/freshautomations/stoml/releases/download/v0.7.1/stoml_linux_amd64 &> /dev/null
-#           mv stoml_linux_amd64 stoml
-#           chmod +x stoml
-#           sudo mv stoml /usr/local/bin/
-#           cargo install pg-trunk
-#       - name: trunk build
-#         working-directory: ./
-#         run: trunk build
-#       - name: trunk publish
-#         working-directory: ./
-#         env:
-#           TRUNK_API_TOKEN: ${{ secrets.TRUNK_AUTH_TOKEN }}
-#         run: |
-#           ext_ver=$(stoml Cargo.toml package.version)
-#           ext_repo=$(stoml Cargo.toml package.repository)
-#           trunk publish prometheus_fdw --version ${ext_ver} --file .trunk/prometheus_fdw-${ext_ver}.tar.gz --description "Foreign Data wrapper for prometheus" --homepage "https://github.com/tembo-io/prometheus_fdw" --repository "https://github.com/tembo-io/prometheus_fdw" --license "PostgreSQL" --category connectors
+  publish:
+    # only publish release events
+    if: github.event_name == 'release'
+    name: trunk publish
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v2
+      - name: Install Rust stable toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: "prometheus_fdw-extension-test"
+          cache-directories: |
+            /home/runner/.pgrx
+      - name: Install stoml and pg-trunk
+        shell: bash
+        run: |
+          set -xe
+          wget https://github.com/freshautomations/stoml/releases/download/v0.7.1/stoml_linux_amd64 &> /dev/null
+          mv stoml_linux_amd64 stoml
+          chmod +x stoml
+          sudo mv stoml /usr/local/bin/
+          cargo install pg-trunk
+      - name: trunk build
+        working-directory: ./
+        run: trunk build
+      - name: trunk publish
+        working-directory: ./
+        env:
+          TRUNK_API_TOKEN: ${{ secrets.TRUNK_AUTH_TOKEN }}
+        run: |
+          ext_ver=$(stoml Cargo.toml package.version)
+          ext_repo=$(stoml Cargo.toml package.repository)
+          trunk publish prometheus_fdw --version ${ext_ver} --file .trunk/prometheus_fdw-${ext_ver}.tar.gz --description "Foreign Data wrapper for prometheus" --homepage "https://github.com/tembo-io/prometheus_fdw" --repository "https://github.com/tembo-io/prometheus_fdw" --license "PostgreSQL" --category connectors
