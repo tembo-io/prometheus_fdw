@@ -7,6 +7,7 @@ use std::env;
 use supabase_wrappers::prelude::*;
 use tokio::runtime::Runtime;
 pgrx::pg_module_magic!();
+use std::time::Duration;
 
 // convert response body text to rows
 fn resp_to_rows(obj: &str, resp: &JsonValue) -> Vec<Row> {
@@ -156,7 +157,12 @@ impl ForeignDataWrapper for PrometheusFdw {
         };
 
         ret.base_url = Some(base_url);
-        ret.client = Some(reqwest::Client::new());
+        ret.client = Some(
+            reqwest::Client::builder()
+                .timeout(Duration::from_secs(30))
+                .build()
+                .expect("Failed to build client"),
+        );
 
         ret
     }
