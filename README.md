@@ -66,11 +66,14 @@ CREATE TABLE public.metric_labels (
 
 -- Create metric_values table
 CREATE TABLE public.metric_values (
-    id BIGINT NOT NULL,
-    time BIGINT,
-    value DOUBLE PRECISION NOT NULL,
-    CONSTRAINT metric_values_unique UNIQUE (id, time)
-) PARTITION BY RANGE (time);
+    label_id bigint NOT NULL,
+    "time" bigint NOT NULL,
+    value double precision NOT NULL,
+    id serial NOT NULL,
+    PRIMARY KEY (id, "time"),
+    UNIQUE (label_id, "time"),
+    FOREIGN KEY (label_id) REFERENCES public.metric_labels(id)
+) PARTITION BY RANGE ("time");
 ```
 
 ## Queries
@@ -139,48 +142,6 @@ CREATE INDEX IF NOT EXISTS metric_values_time_idx  on metric_values USING btree 
 ```
 
 #### Partioning:
-This script creates partitions for the past 30 days
-```
-DO $$
-DECLARE
-    day_offset INT;
-    day_start BIGINT;
-    day_end BIGINT;
-BEGIN
-    -- Adjust the generate_series values to fit your desired range of dates.
-    -- Here it's set to create partitions for 30 days from 30 days ago to yesterday.
-    FOR day_offset IN SELECT generate_series(0, 29) AS day_num LOOP
-        day_start := EXTRACT(EPOCH FROM date_trunc('day', current_date - day_offset))::BIGINT;
-        day_end := EXTRACT(EPOCH FROM (date_trunc('day', current_date - day_offset) + interval '1 day') - interval '1 second')::BIGINT;
-        EXECUTE format(
-            'CREATE TABLE IF NOT EXISTS metric_values_%s PARTITION OF metric_values FOR VALUES FROM (%s) TO (%s)',
-            TO_CHAR(current_date - day_offset, 'YYYY_MM_DD'),
-            day_start,
-            day_end
-        );
-    END LOOP;
-END $$;
-```
-
-To drop partitions:
-```
-DO $$
-  DECLARE
-      r RECORD;
-  BEGIN
-      FOR r IN (
-          SELECT table_name
-          FROM information_schema.tables
-          WHERE table_name LIKE 'metric_values_%'
-          AND table_schema = 'public'  -- Adjust schema name if necessary
-      ) LOOP
-          EXECUTE format('DROP TABLE %I CASCADE', r.table_name);
-      END LOOP;
-  END $$;
-```
-
-### Queries using pg_cron and pg_partman
-
 To create partitions 30 days into the past and future:
 ```
 SELECT create_parent(
@@ -207,64 +168,90 @@ SET retention = '30 days'
 WHERE parent_table = 'public.metric_values';
 ```
 
+### Queries using pg_cron
+
 To continuosly update the tables and information
 NOTE: this might not be super great as eacht ask runs every mintute of the hour, but the "now" counter keeps moving forward. 
+
+Create functions to do the tasks mentioned above
 ```
--- First query
-SELECT cron.schedule(
-    '0 * * * *',
-    $$ 
-    INSERT INTO metrics_local
-    SELECT * FROM metrics
-    WHERE
-      metric_name='container_cpu_usage_seconds_total'
-      AND metric_time > EXTRACT(epoch FROM now() - interval '1 hour' + interval '1 second')::BIGINT
-      AND metric_time < EXTRACT(epoch FROM now())::BIGINT;
-    $$
-);
+CREATE OR REPLACE FUNCTION insert_metrics() RETURNS void LANGUAGE plpgsql AS $$
+DECLARE
+    start_time BIGINT;
+    end_time BIGINT;
+BEGIN
+    start_time := EXTRACT(epoch FROM now() - interval '1 hour' + interval '1 second')::BIGINT;
+    end_time := EXTRACT(epoch FROM now())::BIGINT;
+    
+    EXECUTE format(
+        'INSERT INTO metrics_local
+        SELECT * FROM metrics
+        WHERE
+          metric_name = ''container_cpu_usage_seconds_total''
+          AND metric_time > %s
+          AND metric_time < %s;',
+        start_time,
+        end_time
+    );
+END;
+$$;
 
--- Second query
-SELECT cron.schedule(
-    '1 * * * *',
-    $$
-    INSERT INTO public.metric_labels (name, labels)
-    SELECT 
-        metric_name, 
-        metric_labels
-    FROM metrics_local
-    WHERE 
-        metric_time > EXTRACT(epoch FROM now() - interval '1 hour' + interval '1 second')::BIGINT
-        AND metric_time < EXTRACT(epoch FROM now())::BIGINT
-        AND metric_name = 'container_cpu_usage_seconds_total'
-    ON CONFLICT (name, labels) DO NOTHING;
-    $$
-);
+CREATE OR REPLACE FUNCTION insert_metric_labels() RETURNS void LANGUAGE plpgsql AS $$
+BEGIN
+    EXECUTE '
+        INSERT INTO public.metric_labels (name, labels)
+        SELECT 
+            metric_name, 
+            metric_labels
+        FROM metrics_local
+        WHERE 
+            metric_name = ''container_cpu_usage_seconds_total''
+        ON CONFLICT (name, labels) DO NOTHING;
+    ';
+END;
+$$;
 
--- Third query
+CREATE OR REPLACE FUNCTION insert_metric_values() RETURNS void LANGUAGE plpgsql AS $$
+BEGIN
+    EXECUTE '
+        INSERT INTO metric_values (id, time, value)
+        SELECT
+            mlab.id,
+            ml.metric_time,
+            ml.metric_value
+        FROM
+            metrics_local ml
+        INNER JOIN
+            metric_labels mlab
+        ON
+            ml.metric_labels = mlab.labels
+        ON CONFLICT (id, time) DO NOTHING;
+    ';
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION truncate_metrics_local() RETURNS void LANGUAGE plpgsql AS $$
+BEGIN
+    EXECUTE 'TRUNCATE TABLE metrics_local;';
+END;
+$$;
+```
+
+Create a cron job to run the functions every hour
+```
 SELECT cron.schedule(
-    '2 * * * *',
+    '10 * * * *',
     $$
-    INSERT INTO metric_values (id, time, value)
     SELECT
-        mlab.id,
-        ml.metric_time,
-        ml.metric_value
-    FROM
-        metrics_local ml
-    INNER JOIN
-        metric_labels mlab
-    ON
-        ml.metric_labels = mlab.labels
-    ON CONFLICT (id, time) DO NOTHING;
+        insert_metrics(),
+        insert_metric_labels(),
+        insert_metric_values(),
+        truncate_metrics_local();
     $$
 );
+```
 
--- Optional: Truncate metrics_local
-SELECT cron.schedule(
-    '3 * * * *',
-    $$
-    TRUNCATE TABLE metrics_local;
-    $$
-);
-
+NOTE: Run this command after setting every cron job
+```
+UPDATE cron.job SET nodename = '';
 ```
