@@ -1,11 +1,9 @@
 ## Prometheus_fdw
-NOTE: add a cron job to make this automatic
-NOTE: write tests
-NOTE: use pg_partman to create and manage partitions
 
 ### Pre-requisistes
 
-- have the latest version of `prometheus_fdw` extension enabled in your instance
+- have the latest version of `prometheus_fdw` extension enabled in your instance.
+- have `pg_partman` and `pg_cron` installed and enabled.
 
 ### Set-up 
 
@@ -127,8 +125,6 @@ ON
 ON CONFLICT (id, time) DO NOTHING;
 ```
 
-NOTE: would be a good idea to truncate metrics_local after storing in metric_labels and metric_values.
-
 ### Performance improvements:
 
 #### Indexing:
@@ -171,7 +167,6 @@ WHERE parent_table = 'public.metric_values';
 ### Queries using pg_cron
 
 To continuosly update the tables and information
-NOTE: this might not be super great as eacht ask runs every mintute of the hour, but the "now" counter keeps moving forward. 
 
 Create functions to do the tasks mentioned above
 ```
@@ -204,8 +199,6 @@ BEGIN
             metric_name, 
             metric_labels
         FROM metrics_local
-        WHERE 
-            metric_name = ''container_cpu_usage_seconds_total''
         ON CONFLICT (name, labels) DO NOTHING;
     ';
 END;
@@ -254,4 +247,39 @@ SELECT cron.schedule(
 NOTE: Run this command after setting every cron job
 ```
 UPDATE cron.job SET nodename = '';
+```
+
+### Optional
+ 
+To collect information about multiple metrics, define the insert_metrics function as follows:
+```
+CREATE OR REPLACE FUNCTION public.insert_metrics()
+RETURNS void
+LANGUAGE plpgsql
+AS $function$
+DECLARE
+    start_time BIGINT;
+    end_time BIGINT;
+    metric_name text;
+    metric_names text[] := ARRAY['container_cpu_usage_seconds_total', 'container_memory_working_set_bytes']; -- Add your metric names here
+BEGIN
+    start_time := EXTRACT(epoch FROM now() - interval '1 hour' + interval '1 second')::BIGINT;
+    end_time := EXTRACT(epoch FROM now())::BIGINT;
+
+    FOREACH metric_name IN ARRAY metric_names
+    LOOP
+        EXECUTE format(
+            'INSERT INTO metrics_local
+            SELECT * FROM metrics
+            WHERE
+              metric_name = %L
+              AND metric_time > %s
+              AND metric_time < %s;',
+            metric_name,
+            start_time,
+            end_time
+        );
+    END LOOP;
+END;
+$function$;
 ```
