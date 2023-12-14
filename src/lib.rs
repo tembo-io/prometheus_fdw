@@ -21,7 +21,7 @@ fn resp_to_rows(obj: &str, resp: &JsonValue, quals: &[Qual]) -> Vec<Row> {
                     let metric_name_filter = quals
                         .iter()
                         .find(|qual| qual.field == "metric_name" && qual.operator == "=");
-                    if let Some(mut metric_name) = metric_name_filter
+                    if let Some(metric_name) = metric_name_filter
                         .map(|qual| PrometheusFdw::value_to_promql_string(&qual.value))
                     {
                         let metric_labels = result_obj["metric"].clone();
@@ -70,6 +70,9 @@ fn resp_to_rows(obj: &str, resp: &JsonValue, quals: &[Qual]) -> Vec<Row> {
 pub(crate) struct PrometheusFdw {
     rt: Runtime,
     base_url: Option<String>,
+    username: Option<String>,
+    password: Option<String>,
+    bearer_token: Option<String>,
     client: Option<Client>,
     scan_result: Option<Vec<Row>>,
     tgt_cols: Vec<Column>,
@@ -147,6 +150,9 @@ impl ForeignDataWrapper for PrometheusFdw {
         let mut ret = Self {
             rt: create_async_runtime(),
             base_url: None,
+            username: None,
+            password: None,
+            bearer_token: None,
             client: None,
             tgt_cols: Vec::new(),
             scan_result: None,
@@ -192,27 +198,42 @@ impl ForeignDataWrapper for PrometheusFdw {
 
             if obj == "metrics" {
                 let url = self.build_url(&obj, options, quals);
+                let mut resp = None;
 
-                let resp = self.rt.block_on(async { client.get(&url).send().await });
+                if let Some(bearer_token) = &self.bearer_token {
+                    // Create a RequestBuilder and set the bearer token
+                    let request = client.get(&url).bearer_auth(bearer_token);
+                    resp = self.rt.block_on(async { request.send().await }).ok();
+                } else if let (Some(username), Some(password)) = (&self.username, &self.password) {
+                    // Create a RequestBuilder with basic auth
+                    let request = client.get(&url).basic_auth(username, Some(password));
+                    resp = self.rt.block_on(async { request.send().await }).ok();
+                } else {
+                    // Send a request without authentication
+                    resp = self
+                        .rt
+                        .block_on(async { client.get(&url).send().await })
+                        .ok();
+                }
 
+                // Assuming resp is of type Result<Response, reqwest::Error>
                 match resp {
-                    Ok(resp) => {
-                        let body = self.rt.block_on(async { resp.text().await });
-                        match body {
+                    Some(response) => {
+                        let body_result = self.rt.block_on(async { response.text().await });
+                        match body_result {
                             Ok(body) => {
-                                // warning!("body: {}", body);
+                                // `body` is a String here
                                 let json: JsonValue = serde_json::from_str(&body).unwrap();
-                                // warning!("json: {}", json);
                                 result = resp_to_rows(&obj, &json, &quals);
-                                // warning!("result: {:#?}", result);
                             }
                             Err(e) => {
                                 warning!("failed to get body: {}", e);
                             }
                         }
                     }
-                    Err(e) => {
-                        warning!("failed to get response: {}", e);
+                    None => {
+                        // Handle the case when resp is None
+                        warning!("No response received");
                     }
                 }
             }
