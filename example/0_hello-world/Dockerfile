@@ -6,4 +6,4 @@
 FROM quay.io/tembo/tembo-local:latest
 
 ENV PROMETHEUS_BASE_URL="https://prometheus-data-1.use1.dev.plat.cdb-svc.com"
-RUN trunk install prometheus_fdw
+RUN trunk install prometheus_fdw --version 0.1.3

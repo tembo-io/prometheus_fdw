@@ -22,6 +22,6 @@ CREATE FOREIGN TABLE metrics (
 SERVER my_prometheus_server
 OPTIONS (
   object 'metrics',
-  step '10m',
+  step '30s',
   base_url 'https://prometheus-data-1.use1.dev.plat.cdb-svc.com/'
 );
