@@ -44,7 +44,7 @@ $$;
 CREATE OR REPLACE FUNCTION insert_metric_values() RETURNS void LANGUAGE plpgsql AS $$
 BEGIN
     EXECUTE '
-        INSERT INTO metric_values (id, time, value)
+        INSERT INTO metric_values (label_id, time, value)
         SELECT
             mlab.id,
             ml.metric_time,
