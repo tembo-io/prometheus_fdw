@@ -66,7 +66,15 @@ BEGIN
 END;
 $$;
 
+-- Perform an initial sync
+SELECT
+    insert_metrics(),
+    insert_metric_labels(),
+    insert_metric_values(),
+    truncate_metrics_local();
 
+
+-- Schedule syncs
 SELECT cron.schedule(
     '0 * * * *',
     $$

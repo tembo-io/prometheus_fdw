@@ -10,7 +10,7 @@
 
 This data model was inspired by the [Crunchy Data postgresql-prometheus-adapter](https://github.com/CrunchyData/postgresql-prometheus-adapter).
 
-**metrics_labels**: Stores the metric name labels.
+**metric_labels**: Stores the metric name labels.
 
 ```
  id |               name                 |      labels
@@ -21,7 +21,7 @@ This data model was inspired by the [Crunchy Data postgresql-prometheus-adapter]
   4 | container_memory_working_set_bytes | {"pod": "my-pod-2", ...}
 ```
 
-**metrics_values**: A partitioned table that stores metric values, when they happened, and the corresponding labels.
+**metric_values**: A partitioned table that stores metric values, when they happened, and the corresponding labels.
 
 ```
  label_id |    time    |  value
@@ -37,3 +37,7 @@ This data model was inspired by the [Crunchy Data postgresql-prometheus-adapter]
      4331 | 1702679342 | 53288960
      4331 | 1702677542 | 53514240
 ```
+
+## Example query
+
+The query in **sample-query.sql** is an example of showing the current memory utilization of each container in kube-system.

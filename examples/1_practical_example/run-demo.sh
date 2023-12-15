@@ -16,3 +16,4 @@ echo "Ready!"
 psql postgres://postgres:postgres@localhost:5432 -f ./setup-prometheus-fdw.sql
 psql postgres://postgres:postgres@localhost:5432 -f ./setup-cache.sql
 psql postgres://postgres:postgres@localhost:5432 -f ./setup-metrics-sync.sql
+psql postgres://postgres:postgres@localhost:5432 -f ./sample-query.sql
