@@ -1,5 +1,7 @@
 ## Prometheus_fdw
 
+Prometheus_fdw is an integration of Prometheus monitoring data into Postgres. It enables querying for Prometheus metrics directly within Postgres, bridging the gap between Prometheus monitoring and Postgres's robust database capabilities.
+
 ### Pre-requisistes
 
 - Install `prometheus_fdw`
