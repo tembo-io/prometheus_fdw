@@ -1,0 +1,45 @@
+{
+   "name": "prometheus_fdw",
+   "abstract": "Postgres Foreign Data Wrapper for Prometheus Data",
+   "description": "Prometheus_fdw is an integration of Prometheus monitoring data into Postgres. It enables querying for Prometheus metrics directly within Postgres, bridging the gap between Prometheus monitoring and Postgres's robust database capabilities.",
+   "version": "@CARGO_VERSION@",
+   "maintainer": [
+      "Tembo <admin+pgxn@tembo.io>"
+   ],
+   "license": "postgresql",
+   "provides": {
+      "prometheus_fdw": {
+         "abstract": "Postgres Foreign Data Wrapper for Prometheus Data",
+         "file": "src/lib.rs",
+         "docfile": "README.md",
+         "version": "@CARGO_VERSION@"
+      }
+   },
+   "prereqs": {
+      "runtime": {
+         "requires": {
+            "PostgreSQL": "15.0.0"
+         }
+      }
+   },
+   "resources": {
+      "bugtracker": {
+         "web": "https://github.com/tembo-io/prometheus_fdw/issues"
+      },
+      "repository": {
+         "url": "git://github.com/tembo-io/prometheus_fdw.git",
+         "web": "https://github.com/tembo-io/prometheus_fdw/",
+         "type": "git"
+      }
+   },
+   "generated_by": "Jay Kothari",
+   "meta-spec": {
+      "version": "1.0.0",
+      "url": "https://pgxn.org/meta/spec.txt"
+   },
+   "tags": [
+      "fdw",
+      "foreign data wrapper",
+      "prometheus"
+   ]
+}
