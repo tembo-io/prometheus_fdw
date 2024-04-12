@@ -4,3 +4,5 @@
 *.iml
 **/*.rs.bk
 .vscode/
+META.json
+/prometheus_fdw-*

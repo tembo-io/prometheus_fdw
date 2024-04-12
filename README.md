@@ -1,6 +1,8 @@
 ## Prometheus_fdw
 
 Prometheus_fdw is an integration of Prometheus monitoring data into Postgres. It enables querying for Prometheus metrics directly within Postgres, bridging the gap between Prometheus monitoring and Postgres's robust database capabilities.
+[![Static Badge](https://img.shields.io/badge/%40tembo-community?logo=slack&label=slack)](https://join.slack.com/t/tembocommunity/shared_invite/zt-20dtnhcmo-pLNV7_Aobi50TdTLpfQ~EQ)
+[![PGXN version](https://badge.fury.io/pg/prometheus_fdw.svg)](https://pgxn.org/dist/prometheus_fdw/)
 
 ### Pre-requisistes
 
@@ -13,7 +15,7 @@ Prometheus_fdw is an integration of Prometheus monitoring data into Postgres. It
 
 Create the foreign data wrapper:
 
-```
+```sql
 create foreign data wrapper prometheus_wrapper
   handler prometheus_fdw_handler
   validator prometheus_fdw_validator;
@@ -21,7 +23,7 @@ create foreign data wrapper prometheus_wrapper
 
 Create the server:
 
-```
+```sql
 create server my_prometheus_server
   foreign data wrapper prometheus_wrapper
   options (
@@ -30,7 +32,7 @@ create server my_prometheus_server
 
 Create Foreign Table:
 
-```
+```sql
 CREATE FOREIGN TABLE IF NOT EXISTS metrics (
   metric_name TEXT,
   metric_labels JSONB,
@@ -48,7 +50,7 @@ options (
 
 To simply run the fdw and look at values
 
-```
+```sql
 SELECT
   *
 FROM metrics
