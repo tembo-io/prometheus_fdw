@@ -1,3 +1,5 @@
+mod init;
+
 use pgrx::warning;
 use pgrx::{pg_sys, prelude::*, JsonB};
 use reqwest::{self, Client};

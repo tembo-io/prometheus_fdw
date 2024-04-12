@@ -1,0 +1,3 @@
+CREATE FUNCTION create_table()
+    RETURNS VOID AS 'MODULE_PATHNAME', 'create_table'
+    LANGUAGE C STRICT;
