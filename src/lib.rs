@@ -1,3 +1,5 @@
+mod init;
+
 use pgrx::warning;
 use pgrx::{pg_sys, prelude::*, JsonB};
 use reqwest::{self, Client};
@@ -62,7 +64,7 @@ fn resp_to_rows(obj: &str, resp: &JsonValue, quals: &[Qual]) -> Vec<Row> {
 }
 
 #[wrappers_fdw(
-    version = "0.1.4",
+    version = "0.1.5",
     author = "Jay Kothari",
     website = "https://tembo.io"
 )]

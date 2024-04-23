@@ -1379,7 +1379,7 @@ dependencies = [
 
 [[package]]
 name = "prometheus_fdw"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "chrono",
  "pgrx",
