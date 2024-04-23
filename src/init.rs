@@ -1,6 +1,48 @@
 use pgrx::prelude::*;
 use std::error::Error;
 
+#[pg_extern]
+fn basic_setup(base_url: &str, step: Option<&str>) -> Result<(), Box<dyn Error>> {
+    let queries = format!(
+        r#"
+            -- Enable the extensions
+            CREATE EXTENSION IF NOT EXISTS prometheus_fdw CASCADE;
+            CREATE EXTENSION IF NOT EXISTS pg_partman CASCADE;
+            CREATE EXTENSION IF NOT EXISTS pg_cron CASCADE;
+
+            -- Create the FDW
+            CREATE FOREIGN DATA WRAPPER prometheus_wrapper
+              HANDLER prometheus_fdw_handler
+                VALIDATOR prometheus_fdw_validator;
+
+            -- Configure connection to server
+            CREATE SERVER my_prometheus_server
+              FOREIGN DATA WRAPPER prometheus_wrapper
+              OPTIONS (
+                base_url '{}');
+
+            -- Create FDW table we can query to get metrics
+            CREATE FOREIGN TABLE metrics (
+              metric_name TEXT,
+              metric_labels JSONB,
+              metric_time BIGINT,
+              metric_value FLOAT8
+              )
+            SERVER my_prometheus_server
+            OPTIONS (
+              object 'metrics',
+              step '{}'
+            );
+        "#,
+        base_url,
+        step.unwrap_or("10m")
+    );
+
+    Spi::run(&queries);
+
+    Ok(())
+}
+
 /// Creates the necessary tables for metric tracking.
 #[pg_extern]
 fn create_tables() -> Result<(), Box<dyn Error>> {
@@ -17,7 +59,7 @@ fn create_tables() -> Result<(), Box<dyn Error>> {
         ) PARTITION BY RANGE (time);
     "#;
 
-    Spi::run(queries);
+    Spi::run(&queries);
 
     Ok(())
 }
