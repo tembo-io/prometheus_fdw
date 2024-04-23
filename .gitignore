@@ -6,4 +6,3 @@
 .vscode/
 META.json
 /prometheus_fdw-*
-/site
