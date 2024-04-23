@@ -1,3 +1,8 @@
+CREATE FUNCTION basic_setup(base_url text)
+    RETURNS void
+AS 'MODULE_PATHNAME', 'basic_setup'
+    LANGUAGE C STRICT;
+
 CREATE FUNCTION create_tables()
     RETURNS void
 AS 'MODULE_PATHNAME', 'create_tables'

@@ -2,7 +2,7 @@ use pgrx::prelude::*;
 use std::error::Error;
 
 #[pg_extern]
-fn basic_setup(base_url: &str, step: Option<&str>) -> Result<(), Box<dyn Error>> {
+fn basic_setup(base_url: &str) -> Result<(), Box<dyn Error>> {
     let queries = format!(
         r#"
             -- Enable the extensions
@@ -34,8 +34,7 @@ fn basic_setup(base_url: &str, step: Option<&str>) -> Result<(), Box<dyn Error>>
               step '{}'
             );
         "#,
-        base_url,
-        step.unwrap_or("10m")
+        base_url, "10m"
     );
 
     Spi::run(&queries);
