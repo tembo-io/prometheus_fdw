@@ -37,8 +37,7 @@ fn basic_setup(base_url: &str) -> Result<(), Box<dyn Error>> {
         base_url, "10m"
     );
 
-    Spi::run(&queries);
-
+    let _ = Spi::run(&queries);
     Ok(())
 }
 
@@ -58,8 +57,7 @@ fn create_tables() -> Result<(), Box<dyn Error>> {
         ) PARTITION BY RANGE (time);
     "#;
 
-    Spi::run(&queries);
-
+    let _ = Spi::run(&queries);
     Ok(())
 }
 
@@ -73,7 +71,7 @@ fn create_indexes() -> Result<(), Box<dyn Error>> {
         CREATE INDEX idx_metric_values_label_id ON metric_values (label_id);
     "#;
 
-    Spi::run(queries);
+    let _ = Spi::run(queries);
     Ok(())
 }
 
@@ -85,7 +83,7 @@ fn create_partitions(retention_period: &str) -> Result<(), Box<dyn Error>> {
     "#;
 
     // Execute the partition setup query
-    Spi::run(setup_partitioning);
+    let _ = Spi::run(setup_partitioning);
 
     let setup_retention = format!(
         r#"
@@ -100,6 +98,6 @@ fn create_partitions(retention_period: &str) -> Result<(), Box<dyn Error>> {
     );
 
     // Execute the retention setup query
-    Spi::run(&setup_retention);
+    let _ = Spi::run(&setup_retention);
     Ok(())
 }
