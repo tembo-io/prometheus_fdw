@@ -1,0 +1,66 @@
+
+name: Extension Upgrade
+
+defaults:
+  run:
+    shell: bash
+    working-directory: ./
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/extension_upgrade.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/extension_upgrade.yml"
+
+jobs:
+  test:
+    name: Upgrade Test
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout repository content
+        uses: actions/checkout@v4
+      - name: Install Rust stable toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: "extension-upgrade-test"
+          workspaces: prometheus_fdw
+          cache-directories: |
+            /home/runner/.pgrx
+      - name: Get current version
+        id: current-version
+        run: echo "CI_BRANCH=$(git name-rev --name-only HEAD)" >> $GITHUB_OUTPUT
+      - uses: ./.github/actions/pgx-init
+      - name: Install sys dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y postgresql-server-dev-14
+      - name: Install and Test v0.3.0
+        run: |
+          git fetch --tags
+          git checkout tags/v0.3.0
+          echo "\q" | cargo pgrx run
+          psql postgres://${USER}:${USER}@localhost:28816/postgres -c "drop extension if exists prometheus_fdw; create extension prometheus_fdw;"
+          cargo test
+      - name: Test branch's version
+        env:
+          CI_BRANCH: ${{ steps.current-version.outputs.CI_BRANCH }}
+        run: |
+          git checkout $CI_BRANCH
+          echo "\q" | cargo pgrx run
+          psql postgres://${USER}:${USER}@localhost:28816/postgres -c "alter extension prometheus_fdw update;"
+          cargo test
+      - name: Debugging information
+        if: always()
+        env:
+          CI_BRANCH: ${{ steps.current-version.outputs.CI_BRANCH }}
+        run: |
+          git checkout $CI_BRANCH
+          cat ~/.pgrx/16.log
