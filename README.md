@@ -1,6 +1,12 @@
 ## Prometheus_fdw
 
 Prometheus_fdw is an integration of Prometheus monitoring data into Postgres. It enables querying for Prometheus metrics directly within Postgres, bridging the gap between Prometheus monitoring and Postgres's robust database capabilities.
+
+Learn more about it in this [blog post](https://tembo.io/blog/monitoring-with-prometheus-fdw). 
+Watch it in action in this [demo video](https://youtu.be/LVuH4RtNQss)
+
+[![Tembo Cloud Try Free](https://tembo.io/tryFreeButton.svg)](https://cloud.tembo.io/sign-up)
+
 [![Static Badge](https://img.shields.io/badge/%40tembo-community?logo=slack&label=slack)](https://join.slack.com/t/tembocommunity/shared_invite/zt-20dtnhcmo-pLNV7_Aobi50TdTLpfQ~EQ)
 [![PGXN version](https://badge.fury.io/pg/prometheus_fdw.svg)](https://pgxn.org/dist/prometheus_fdw/)
 
