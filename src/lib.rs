@@ -68,7 +68,7 @@ fn resp_to_rows(obj: &str, resp: &JsonValue, quals: &[Qual]) -> Vec<Row> {
     version = "0.2.0",
     author = "Jay Kothari",
     website = "https://tembo.io",
-    error_type = "PrometheusFdwError",
+    error_type = "PrometheusFdwError"
 )]
 
 pub(crate) struct PrometheusFdw {
