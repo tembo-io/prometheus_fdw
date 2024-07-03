@@ -9,9 +9,9 @@ use std::env;
 use supabase_wrappers::prelude::*;
 use tokio::runtime::Runtime;
 pgrx::pg_module_magic!();
+use pgrx::pg_sys::panic::ErrorReport;
 use std::time::Duration;
 use urlencoding::encode;
-use pgrx::pg_sys::panic::ErrorReport;
 
 // convert response body text to rows
 fn resp_to_rows(obj: &str, resp: &JsonValue, quals: &[Qual]) -> Vec<Row> {
@@ -271,10 +271,13 @@ impl ForeignDataWrapper<PrometheusFdwError> for PrometheusFdw {
         Ok(())
     }
 
-    fn validator(options: Vec<Option<String>>, catalog: Option<pg_sys::Oid>) -> PrometheusFdwResult<()> {
+    fn validator(
+        options: Vec<Option<String>>,
+        catalog: Option<pg_sys::Oid>,
+    ) -> PrometheusFdwResult<()> {
         if let Some(oid) = catalog {
             if oid == FOREIGN_TABLE_RELATION_ID {
-                let _ =check_options_contain(&options, "object");
+                let _ = check_options_contain(&options, "object");
             }
         }
         Ok(())
