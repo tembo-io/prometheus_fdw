@@ -9,6 +9,7 @@ use std::env;
 use supabase_wrappers::prelude::*;
 use tokio::runtime::Runtime;
 pgrx::pg_module_magic!();
+use pgrx::pg_sys::panic::ErrorReport;
 use std::time::Duration;
 use urlencoding::encode;
 
@@ -64,9 +65,10 @@ fn resp_to_rows(obj: &str, resp: &JsonValue, quals: &[Qual]) -> Vec<Row> {
 }
 
 #[wrappers_fdw(
-    version = "0.1.5",
+    version = "0.2.0",
     author = "Jay Kothari",
-    website = "https://tembo.io"
+    website = "https://tembo.io",
+    error_type = "PrometheusFdwError"
 )]
 
 pub(crate) struct PrometheusFdw {
@@ -79,6 +81,16 @@ pub(crate) struct PrometheusFdw {
     scan_result: Option<Vec<Row>>,
     tgt_cols: Vec<Column>,
 }
+
+enum PrometheusFdwError {}
+
+impl From<PrometheusFdwError> for ErrorReport {
+    fn from(_value: PrometheusFdwError) -> Self {
+        ErrorReport::new(PgSqlErrorCode::ERRCODE_FDW_ERROR, "", "")
+    }
+}
+
+type PrometheusFdwResult<T> = Result<T, PrometheusFdwError>;
 
 impl PrometheusFdw {
     fn value_to_promql_string(value: &supabase_wrappers::interface::Value) -> String {
@@ -147,10 +159,10 @@ impl PrometheusFdw {
     }
 }
 
-impl ForeignDataWrapper for PrometheusFdw {
-    fn new(options: &HashMap<String, String>) -> Self {
+impl ForeignDataWrapper<PrometheusFdwError> for PrometheusFdw {
+    fn new(options: &HashMap<String, String>) -> PrometheusFdwResult<Self> {
         let mut ret = Self {
-            rt: create_async_runtime(),
+            rt: create_async_runtime().expect("failed to create async runtime"),
             base_url: None,
             username: None,
             password: None,
@@ -176,7 +188,7 @@ impl ForeignDataWrapper for PrometheusFdw {
                 .expect("Failed to build client"),
         );
 
-        ret
+        Ok(ret)
     }
 
     fn begin_scan(
@@ -186,11 +198,8 @@ impl ForeignDataWrapper for PrometheusFdw {
         _sorts: &[Sort],
         _limit: &Option<Limit>,
         options: &HashMap<String, String>,
-    ) {
-        let obj = match require_option("object", options) {
-            Some(obj) => obj,
-            None => return,
-        };
+    ) -> PrometheusFdwResult<()> {
+        let obj = require_option("object", options).expect("invalid option");
 
         self.scan_result = None;
         self.tgt_cols = columns.to_vec();
@@ -200,7 +209,7 @@ impl ForeignDataWrapper for PrometheusFdw {
 
             if obj == "metrics" {
                 let url = self.build_url(&obj, options, quals);
-                let mut resp = None;
+                let resp;
 
                 if let Some(bearer_token) = &self.bearer_token {
                     // Create a RequestBuilder and set the bearer token
@@ -242,28 +251,35 @@ impl ForeignDataWrapper for PrometheusFdw {
 
             self.scan_result = Some(result);
         }
+        Ok(())
     }
 
-    fn iter_scan(&mut self, row: &mut Row) -> Option<()> {
+    fn iter_scan(&mut self, row: &mut Row) -> PrometheusFdwResult<Option<()>> {
         if let Some(ref mut result) = self.scan_result {
             if !result.is_empty() {
-                return result.drain(0..1).last().map(|src_row| {
+                let scanned = result.drain(0..1).last().map(|src_row| {
                     row.replace_with(src_row);
                 });
+                return Ok(scanned);
             }
         }
-        None
+        Ok(None)
     }
 
-    fn end_scan(&mut self) {
+    fn end_scan(&mut self) -> PrometheusFdwResult<()> {
         self.scan_result.take();
+        Ok(())
     }
 
-    fn validator(options: Vec<Option<String>>, catalog: Option<pg_sys::Oid>) {
+    fn validator(
+        options: Vec<Option<String>>,
+        catalog: Option<pg_sys::Oid>,
+    ) -> PrometheusFdwResult<()> {
         if let Some(oid) = catalog {
             if oid == FOREIGN_TABLE_RELATION_ID {
-                check_options_contain(&options, "object");
+                let _ = check_options_contain(&options, "object");
             }
         }
+        Ok(())
     }
 }
