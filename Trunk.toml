@@ -6,8 +6,8 @@ description = "Postgres Foreign Data Wrapper for Prometheus Data"
 homepage = "https://github.com/tembo-io/prometheus_fdw"
 documentation = "https://github.com/tembo-io/prometheus_fdw"
 categories = ["connectors"]
-version = "0.2.0"
+version = "0.2.1"
 
 [build]
-postgres_version = "15"
+postgres_version = "17"
 platform = "linux/amd64"

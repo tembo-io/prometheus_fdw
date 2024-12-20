@@ -21,7 +21,7 @@ jobs:
     name: Run linters
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Install Rust minimal nightly with clippy and rustfmt
         uses: actions-rs/toolchain@v1
         with:
@@ -49,7 +49,7 @@ jobs:
     runs-on: ubuntu-22.04
     strategy:
       matrix:
-        pg: [ 14, 15, 16 ]
+        pg: [ 14, 15, 16, 17 ]
     steps:
       - uses: actions/checkout@v4
       - name: Install Rust stable toolchain

@@ -1,31 +1,32 @@
 [package]
 name = "prometheus_fdw"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "lib"]
 
 [features]
-default = ["pg16"]
+default = ["pg17"]
 pg14 = ["pgrx/pg14", "pgrx-tests/pg14", "supabase-wrappers/pg14"]
 pg15 = ["pgrx/pg15", "pgrx-tests/pg15", "supabase-wrappers/pg15"]
 pg16 = ["pgrx/pg16", "pgrx-tests/pg16", "supabase-wrappers/pg16"]
+pg17 = ["pgrx/pg17", "pgrx-tests/pg17", "supabase-wrappers/pg17"]
 pg_test = []
 
 [dependencies]
-chrono = "0.4.26"
-pgrx = "=0.11.3"
-reqwest = "0.11.18"
-reqwest-middleware = "0.2.3"
+chrono = "0.4.39"
+pgrx = "0.12.6"
+reqwest = "0.11.27"
+reqwest-middleware = "0.2.5"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-supabase-wrappers = { git = "https://github.com/supabase/wrappers.git", default-features = false, rev = "99242d70eb7e551b700e2db31cc618850d835bc2" }
+supabase-wrappers = { version = "0.1.20", default-features = false }
 tokio = { version = "1", features = ["full"] }
 urlencoding = "2.1.3"
 
 [dev-dependencies]
-pgrx-tests = "=0.11.3"
+pgrx-tests = "0.12.6"
 
 [profile.dev]
 panic = "unwind"

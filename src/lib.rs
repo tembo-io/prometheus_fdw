@@ -160,7 +160,7 @@ impl PrometheusFdw {
 }
 
 impl ForeignDataWrapper<PrometheusFdwError> for PrometheusFdw {
-    fn new(options: &HashMap<String, String>) -> PrometheusFdwResult<Self> {
+    fn new(server: ForeignServer) -> PrometheusFdwResult<Self> {
         let mut ret = Self {
             rt: create_async_runtime().expect("failed to create async runtime"),
             base_url: None,
@@ -172,7 +172,7 @@ impl ForeignDataWrapper<PrometheusFdwError> for PrometheusFdw {
             scan_result: None,
         };
 
-        let base_url = if let Some(prom_url) = options.get("base_url") {
+        let base_url = if let Some(prom_url) = server.options.get("base_url") {
             prom_url.to_owned()
         } else {
             warning!("Cannot find prometheus base url in options");
