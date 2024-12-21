@@ -80,4 +80,4 @@ jobs:
         run: |
           ext_ver=$(stoml Cargo.toml package.version)
           ext_repo=$(stoml Cargo.toml package.repository)
-          trunk publish prometheus_fdw --version ${ext_ver} --file .trunk/prometheus_fdw-${ext_ver}.tar.gz --description "Foreign Data wrapper for prometheus" --homepage "https://github.com/tembo-io/prometheus_fdw" --repository "https://github.com/tembo-io/prometheus_fdw" --license "PostgreSQL" --category connectors
+          trunk publish prometheus_fdw --version ${ext_ver} --description "Foreign Data wrapper for prometheus" --homepage "https://github.com/tembo-io/prometheus_fdw" --repository "https://github.com/tembo-io/prometheus_fdw" --license "PostgreSQL" --category connectors
